@@ -7,16 +7,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-/**
- * @property int $id
- * @property string $name
- * @property string $email
- * @property string $role
- * @property string|null $google_id
- * @property string|null $school_id
- * @property string|null $contact_number
- * @property string|null $avatar
- */
 class User extends Authenticatable implements MustVerifyEmail
 {
     use HasFactory, Notifiable;
@@ -32,7 +22,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'school_id',      
         'contact_number', 
         'avatar', 
-        'program',  
+        'program', 
+        'email_verified_at', 
     ];
 
     protected $hidden = [
@@ -57,11 +48,17 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function submissions()
     {
-        return $this->hasMany(Submission::class, 'student_id');
+        // FIX: Removed 'student_id' so it defaults to the correct 'user_id'
+        return $this->hasMany(Submission::class);
     }
 
     public function courses()
     {
         return $this->hasMany(Course::class, 'teacher_id');
+    }
+
+    public function recommendations()
+    {
+        return $this->hasMany(Recommendation::class);
     }
 }

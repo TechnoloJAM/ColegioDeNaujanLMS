@@ -2,9 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
+import axios from 'axios'; // ADDED for frontend bulk looping
 import Modal from '@/Components/Modal.vue';
 import InputError from '@/Components/InputError.vue';
-import { Eye, Download, FileText } from 'lucide-vue-next'; 
 
 const props = defineProps({ 
     materials: Array,
@@ -13,7 +13,7 @@ const props = defineProps({
 
 const activeTab = ref('pending');
 const selectedIds = ref([]);
-const layoutRef = ref(null);
+const isProcessingBulk = ref(false); // ADDED: Protection during bulk loops
 
 const showMaterialPreview = ref(false);
 const selectedMaterialPath = ref(null);
@@ -52,7 +52,7 @@ const formatForInput = (dateStr) => {
 const openEditModal = (lesson) => {
     lessonToEdit.value = lesson;
     editForm.title = lesson.title;
-    editForm.available_from = formatForInput(lesson.available_from);
+    editForm.available_from = formatForInput(lesson.available_from) || formatForInput(new Date());
     editForm.available_until = formatForInput(lesson.available_until);
     editForm.clearErrors();
     showEditModal.value = true;
@@ -103,16 +103,6 @@ const submitUnarchive = () => {
     });
 };
 
-const toggleSelection = (id) => {
-    if (selectedIds.value.includes(id)) selectedIds.value = selectedIds.value.filter(i => i !== id);
-    else selectedIds.value.push(id);
-};
-
-const toggleAll = () => {
-    if (selectedIds.value.length === pendingMaterials.value.length) selectedIds.value = [];
-    else selectedIds.value = pendingMaterials.value.map(m => m.id);
-};
-
 const pendingMaterials = computed(() => props.materials.filter(m => m.approval_status === 'pending'));
 const rejectedMaterials = computed(() => props.materials.filter(m => m.approval_status === 'rejected'));
 const approvedMaterials = computed(() => {
@@ -148,21 +138,85 @@ const groupedMaterials = computed(() => {
     return groups;
 });
 
+// Clear selections when switching tabs
 watch(activeTab, () => { selectedIds.value = []; });
 
+// --- RESTORED CHECKBOX LOGIC FOR ALL TABS ---
+const toggleSelection = (id) => {
+    if (selectedIds.value.includes(id)) selectedIds.value = selectedIds.value.filter(i => i !== id);
+    else selectedIds.value.push(id);
+};
+
+const isAllSelected = computed(() => {
+    if (displayedMaterials.value.length === 0) return false;
+    return selectedIds.value.length === displayedMaterials.value.length;
+});
+
+const toggleAll = () => {
+    if (isAllSelected.value) {
+        selectedIds.value = [];
+    } else {
+        selectedIds.value = displayedMaterials.value.map(m => m.id);
+    }
+};
+
+// --- DYNAMIC FRONTEND BULK ACTIONS (Looping for endpoints without bulk support) ---
+const bulkAction = async (action, method = 'patch') => {
+    if (!confirm(`Are you sure you want to ${action} ${selectedIds.value.length} selected item(s)?`)) return;
+    
+    isProcessingBulk.value = true;
+    try {
+        for (let id of selectedIds.value) {
+            if (action === 'destroy') {
+                await axios.delete(route(`teacher.lessons.destroy`, id));
+            } else {
+                await axios[method](route(`admin.lessons.${action}`, id));
+            }
+        }
+        // Force an inertia reload to refresh the table data from the server
+        router.reload({ only: ['materials'], onSuccess: () => selectedIds.value = [] });
+    } catch (e) {
+        console.error(e);
+        alert("An error occurred while processing some items.");
+    } finally {
+        isProcessingBulk.value = false;
+    }
+};
+
 const bulkApprove = () => {
-    if (!selectedIds.value.length) return;
     router.post(route('admin.lessons.bulk-approve'), { lesson_ids: selectedIds.value }, { preserveScroll: true, onSuccess: () => { selectedIds.value = []; }});
 };
+
+const confirmingToggle = ref(false);
+const toggleForm = useForm({ password: '' });
+
+const openToggleConfirm = () => {
+    toggleForm.password = ''; 
+    toggleForm.clearErrors(); 
+    confirmingToggle.value = true; 
+};
+
+const submitToggle = () => {
+    toggleForm.post(route('admin.settings.material-approval'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            confirmingToggle.value = false;
+            toggleForm.reset();
+        },
+    });
+};
+
 const approveMaterial = (id) => router.patch(route('admin.lessons.approve', id), {}, { preserveScroll: true });
 const archiveMaterial = (id) => { if(confirm('Force this material into the archive?')) router.patch(route('admin.lessons.archive', id), {}, { preserveScroll: true }); };
 const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')) router.delete(route('teacher.lessons.destroy', id), { preserveScroll: true }); };
+
+const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent py-1.5 px-3 text-xs shadow-sm transition-colors duration-200";
 </script>
 
 <template>
     <Head title="Material Approval" />
 
-    <AuthenticatedLayout ref="layoutRef">
+    <AuthenticatedLayout>
         <div class="mb-4 flex flex-col md:flex-row md:items-end justify-between gap-3">
             <div>
                 <h1 class="text-xl font-black text-slate-900 dark:text-white tracking-tight">Material Approval</h1>
@@ -175,17 +229,10 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
                         <span class="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 leading-none">Require Approval</span>
                         <span class="text-[8px] font-bold text-slate-400 uppercase mt-0.5">{{ requireApproval ? 'Active' : 'Auto-Approve' }}</span>
                     </div>
-                    <button @click="layoutRef.confirmToggle()" :class="requireApproval ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'" class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner">
+                    <button @click="openToggleConfirm" :class="requireApproval ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'" class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner">
                         <span :class="requireApproval ? 'translate-x-4' : 'translate-x-0'" class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                     </button>
                 </div>
-
-                <transition enter-active-class="transition ease-out duration-200" enter-from-class="opacity-0 translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition ease-in duration-150" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 translate-y-2">
-                    <button v-if="activeTab === 'pending' && selectedIds.length > 0" @click="bulkApprove" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-all flex items-center gap-1 h-full">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
-                        Approve ({{ selectedIds.length }})
-                    </button>
-                </transition>
             </div>
         </div>
 
@@ -216,6 +263,38 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
                 </div>
             </div>
 
+            <transition enter-active-class="transition ease-out duration-200" enter-from-class="opacity-0 -translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition ease-in duration-150" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 -translate-y-2">
+                <div v-if="selectedIds.length > 0" class="flex flex-wrap items-center gap-2 bg-blue-50 dark:bg-blue-900/20 p-2.5 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
+                    <span class="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 mr-auto flex items-center gap-2">
+                        <svg v-if="isProcessingBulk" class="animate-spin w-3 h-3 text-blue-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        {{ selectedIds.length }} Selected
+                    </span>
+                    
+                    <button v-if="['pending', 'rejected'].includes(activeTab)" @click="bulkApprove" :disabled="isProcessingBulk" class="text-[9px] bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded uppercase tracking-widest font-black shadow-sm transition disabled:opacity-50">
+                        Approve All
+                    </button>
+
+                    <button v-if="['pending', 'approved'].includes(activeTab)" @click="bulkAction('reject')" :disabled="isProcessingBulk" class="text-[9px] bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1.5 rounded uppercase tracking-widest font-black shadow-sm transition disabled:opacity-50">
+                        Reject All
+                    </button>
+
+                    <button v-if="activeTab === 'approved'" @click="bulkAction('archive')" :disabled="isProcessingBulk" class="text-[9px] bg-orange-100 hover:bg-orange-200 text-orange-700 px-3 py-1.5 rounded uppercase tracking-widest font-black shadow-sm transition disabled:opacity-50">
+                        Archive All
+                    </button>
+
+                    <button v-if="['rejected', 'archived'].includes(activeTab)" @click="bulkAction('destroy', 'delete')" :disabled="isProcessingBulk" class="text-[9px] bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded uppercase tracking-widest font-black shadow-sm transition disabled:opacity-50">
+                        Delete All
+                    </button>
+                </div>
+            </transition>
+
+            <div v-if="displayedMaterials.length > 0" class="flex items-center gap-2 px-1">
+                <input type="checkbox" :checked="isAllSelected" @change="toggleAll" id="selectAll" class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer shadow-sm">
+                <label for="selectAll" class="text-[10px] font-black uppercase tracking-widest text-slate-500 cursor-pointer select-none">
+                    Select All in Tab
+                </label>
+            </div>
+
             <div v-if="Object.keys(groupedMaterials).length > 0" class="space-y-4">
                 <div v-for="(group, courseName) in groupedMaterials" :key="courseName" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                     
@@ -233,10 +312,11 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
                     </div>
 
                     <div class="divide-y divide-slate-100 dark:divide-slate-700/50">
-                        <div v-for="material in group.items" :key="material.id" class="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors" :class="selectedIds.includes(material.id) ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/50'">
-                            <div class="flex items-center gap-2.5 min-w-0 w-full sm:w-auto cursor-pointer" @click="activeTab === 'pending' ? toggleSelection(material.id) : null">
-                                <div v-if="activeTab === 'pending'" class="shrink-0">
-                                    <input type="checkbox" :checked="selectedIds.includes(material.id)" @click.stop @change="toggleSelection(material.id)" class="w-3.5 h-3.5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer">
+                        <div v-for="material in group.items" :key="material.id" class="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition-colors cursor-pointer" :class="selectedIds.includes(material.id) ? 'bg-emerald-50/30 dark:bg-emerald-900/10' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/50'" @click="toggleSelection(material.id)">
+                            
+                            <div class="flex items-center gap-2.5 min-w-0 w-full sm:w-auto">
+                                <div class="shrink-0">
+                                    <input type="checkbox" :checked="selectedIds.includes(material.id)" @click.stop @change="toggleSelection(material.id)" class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer shadow-sm">
                                 </div>
                                 <div class="flex flex-col min-w-0 w-full">
                                     <div class="flex items-center gap-2 mb-1">
@@ -265,12 +345,12 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
                                 </div>
                             </div>
                             
-                            <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                            <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-auto" @click.stop>
                                 <button @click="openMaterialPreview(material.attachment_path)" title="Preview Material" class="p-1.5 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 transition border border-transparent shadow-sm">
-                                    <Eye class="w-3.5 h-3.5" />
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                                 </button>
                                 <a :href="`/storage/${material.attachment_path}`" download title="Download Material" class="p-1.5 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50 transition border border-transparent shadow-sm">
-                                    <Download class="w-3.5 h-3.5" />
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                                 </a>
                                 
                                 <button @click="openEditModal(material)" class="text-[9px] font-bold uppercase tracking-wide bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1.5 rounded flex items-center gap-1 hover:bg-slate-200 transition">
@@ -304,7 +384,7 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
                 <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
                     <h3 class="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-tight">
                         <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                            <Eye class="w-4 h-4" /> 
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                         </div>
                         Material Preview
                     </h3>
@@ -316,14 +396,35 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
                     <img v-else-if="selectedMaterialPath?.match(/\.(jpeg|jpg|png|gif)$/i)" :src="`/storage/${selectedMaterialPath}`" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
                     
                     <div v-else class="text-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-sm w-full">
-                        <FileText class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" />
+                        <svg class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                         <p class="text-slate-500 font-black mb-1 text-[11px] uppercase tracking-widest">Preview unavailable</p>
                         <p class="text-slate-400 text-[10px] font-bold mb-6">This file type cannot be viewed directly.</p>
                         <div class="flex flex-col gap-2">
                             <a :href="`/storage/${selectedMaterialPath}`" download class="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition text-[10px] font-black uppercase tracking-widest px-4 py-3 rounded-lg shadow-sm w-full">
-                                <Download class="w-4 h-4" /> Download File
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Download File
                             </a>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </Modal>
+
+        <Modal :show="confirmingToggle" @close="confirmingToggle = false" maxWidth="sm">
+            <div class="p-6 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800">
+                <h2 class="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-2 mb-2">
+                    <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    Security Confirmation
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">Enter your password to change the material approval system setting.</p>
+                <div class="space-y-4">
+                    <div>
+                        <label class="sr-only">Password</label>
+                        <input v-model="toggleForm.password" type="password" :class="inputClass" placeholder="Admin Password" @keyup.enter="submitToggle" />
+                        <InputError class="mt-1 text-[9px]" :message="toggleForm.errors.password" />
+                    </div>
+                    <div class="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                        <button @click="confirmingToggle = false" type="button" class="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Cancel</button>
+                        <button @click="submitToggle" :disabled="toggleForm.processing" class="px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-black uppercase tracking-widest shadow-sm transition">Confirm Change</button>
                     </div>
                 </div>
             </div>
@@ -343,12 +444,12 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Show From *</label>
-                            <input v-model="formUnarchive.available_from" type="datetime-local" class="w-full flex h-9 rounded-md border border-slate-200 bg-transparent px-3 py-1 text-[10px] font-medium shadow-sm dark:border-slate-800 text-slate-700 dark:text-slate-300" required>
+                            <input v-model="formUnarchive.available_from" type="datetime-local" :class="inputClass" required>
                             <InputError class="mt-1 text-[9px]" :message="formUnarchive.errors.available_from" />
                         </div>
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">New Archive Date *</label>
-                            <input v-model="formUnarchive.available_until" type="datetime-local" class="w-full flex h-9 rounded-md border border-slate-200 bg-transparent px-3 py-1 text-[10px] font-medium shadow-sm dark:border-slate-800 text-slate-700 dark:text-slate-300" required>
+                            <input v-model="formUnarchive.available_until" type="datetime-local" :class="inputClass" required>
                             <InputError class="mt-1 text-[9px]" :message="formUnarchive.errors.available_until" />
                         </div>
                     </div>
@@ -367,18 +468,18 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
                 <form @submit.prevent="submitEdit" class="space-y-3">
                     <div>
                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Material Title *</label>
-                        <input v-model="editForm.title" type="text" class="w-full flex h-8 rounded-md border border-slate-200 bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:ring-1 focus-visible:ring-slate-400 dark:border-slate-800" required>
+                        <input v-model="editForm.title" type="text" :class="inputClass" required>
                         <InputError class="mt-1 text-[9px]" :message="editForm.errors.title" />
                     </div>
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Show From *</label>
-                            <input v-model="editForm.available_from" type="datetime-local" class="w-full flex h-8 rounded-md border border-slate-200 bg-transparent px-2 py-1 text-[10px] font-medium shadow-sm dark:border-slate-800 text-slate-700 dark:text-slate-300" required>
+                            <input v-model="editForm.available_from" type="datetime-local" :class="inputClass" required>
                             <InputError class="mt-1 text-[9px]" :message="editForm.errors.available_from" />
                         </div>
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Archive On *</label>
-                            <input v-model="editForm.available_until" type="datetime-local" class="w-full flex h-8 rounded-md border border-slate-200 bg-transparent px-2 py-1 text-[10px] font-medium shadow-sm dark:border-slate-800 text-slate-700 dark:text-slate-300" required>
+                            <input v-model="editForm.available_until" type="datetime-local" :class="inputClass" required>
                             <InputError class="mt-1 text-[9px]" :message="editForm.errors.available_until" />
                         </div>
                     </div>
@@ -394,7 +495,7 @@ const deleteMaterial = (id) => { if(confirm('Permanently delete this material?')
             <div class="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-lg">
                 <h2 class="text-sm font-black uppercase tracking-tight text-red-600 mb-2">Reject Material</h2>
                 <p class="text-xs text-slate-600 dark:text-slate-400">Provide feedback for "{{ selectedLesson?.title }}".</p>
-                <textarea v-model="rejectionForm.reason" rows="3" class="mt-3 w-full rounded-lg border-slate-200 dark:bg-slate-800 dark:border-slate-700 text-xs shadow-sm" placeholder="Explain what needs to be fixed..."></textarea>
+                <textarea v-model="rejectionForm.reason" rows="3" :class="inputClass" class="mt-3 resize-none" placeholder="Explain what needs to be fixed..."></textarea>
                 <div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                     <button type="button" @click="selectedLesson = null" class="text-[9px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 uppercase tracking-widest">Cancel</button>
                     <button @click="submitRejection" :disabled="rejectionForm.processing" class="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest shadow-sm transition-colors">Send Feedback</button>

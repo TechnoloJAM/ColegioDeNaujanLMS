@@ -5,36 +5,25 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
 class Lesson extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = [
-        'course_id', 
-        'title', 
-        'content', 
-        'video_url', 
-        'attachment_path', 
-        'priority_order',
-        'approval_status',
-        'rejection_note',
-        'available_from',
-        'available_until'
-    ];
+    protected $fillable = ['course_id', 'title', 'attachment_path', 'available_from', 'available_until', 'approval_status', 'rejection_reason', 'is_archived'];
+    protected $casts = ['available_from' => 'datetime', 'available_until' => 'datetime', 'is_archived' => 'boolean'];
 
-    protected $casts = [
-        'available_from' => 'datetime',
-        'available_until' => 'datetime',
-    ];
+    protected static function boot()
+    {
+        parent::boot();
 
-    public function course()
-    {
-        return $this->belongsTo(Course::class);
+        static::forceDeleted(function ($lesson) {
+            if ($lesson->attachment_path) {
+                Storage::disk('public')->delete($lesson->attachment_path);
+            }
+        });
     }
-    
-    public function sections()
-    {
-        return $this->hasMany(DocumentSection::class);
-    }
+
+    public function course() { return $this->belongsTo(Course::class); }
 }

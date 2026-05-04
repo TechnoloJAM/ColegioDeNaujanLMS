@@ -29,9 +29,13 @@ Route::get('/', function () {
 Route::get('/auth/google', [GoogleAuthController::class, 'redirect'])->name('auth.google');
 Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback']);
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/register/onboarding', [GoogleAuthController::class, 'onboarding'])->name('register.onboarding');
     Route::post('/register/complete', [GoogleAuthController::class, 'completeRegistration'])->name('register.complete');
+});
+
+Route::middleware(['auth'])->group(function () {
+    Route::post('/admin/restore-session', [AdminDashboardController::class, 'restoreAdminSession'])->name('admin.restore-session');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -45,7 +49,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             return redirect('/')->with('status', 'Your teacher account is pending administrator approval.');
         }
         
-        if ($role === 'pending' || empty(auth()->user()->school_id)) {
+        if (empty(auth()->user()->school_id)) {
             return redirect()->route('register.onboarding');
         }
         
@@ -60,6 +64,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('/comments/{comment}', [CommentController::class, 'destroy'])->name('comments.destroy');
     
     Route::post('/ai/chat', [AIChatController::class, 'chat'])->name('ai.chat');
+
+    Route::post('/notifications/mark-all-as-read', function () {
+        auth()->user()->unreadNotifications->markAsRead();
+        return back();
+    })->name('notifications.markAllRead');
+
+    Route::delete('/notifications/{id}', function ($id) {
+        auth()->user()->notifications()->where('id', $id)->delete();
+        return back();
+    })->name('notifications.destroy');
 });
 
 // STUDENT ROUTES
@@ -96,32 +110,52 @@ Route::middleware(['auth', 'verified', 'role:teacher'])->prefix('teacher')->name
     Route::post('/courses/{course}/announcements', [AnnouncementController::class, 'store'])->name('announcements.store');
     Route::delete('/announcements/{announcement}', [AnnouncementController::class, 'destroy'])->name('announcements.destroy');
     Route::patch('/lessons/{lesson}/request-unarchive', [LessonController::class, 'teacherUnarchive'])->name('lessons.unarchive');
-    Route::get('/gradebook/{course?}', [CourseController::class, 'gradebook'])->name('gradebook.index');
     Route::post('/lessons/{lesson}/resubmit', [LessonController::class, 'resubmit'])->name('lessons.resubmit');
+    Route::post('/courses/{course}/clone', [CourseController::class, 'clone'])->name('courses.clone');
+    
+    // FIX: Removed the extra /teacher/ and teacher. so it matches perfectly
+    Route::patch('/courses/{course}/toggle-publish', [CourseController::class, 'togglePublish'])->name('courses.toggle-publish');
+    
+    // GRADEBOOK ROUTES
+    Route::get('/gradebook/{course?}', [CourseController::class, 'gradebook'])->name('gradebook.index');
+    Route::post('/courses/{course}/gradebook/autosave', [CourseController::class, 'autosaveGrade'])->name('gradebook.autosave');
 });
 
 // ADMIN ROUTES
 Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+    
+    // User Management
     Route::get('/users', [AdminDashboardController::class, 'users'])->name('users.index');
     Route::post('/users', [AdminDashboardController::class, 'storeUser'])->name('users.store');
+    Route::post('/users/bulk-status', [AdminDashboardController::class, 'bulkToggleUserStatus'])->name('users.bulk-toggle-status');
+    Route::post('/users/bulk-destroy', [AdminDashboardController::class, 'bulkDestroyUsers'])->name('users.bulk-destroy');
+    
+    // Secure Role, Password, and Impersonation
+    Route::patch('/users/{user}/role', [AdminDashboardController::class, 'updateRole'])->name('users.update-role');
+    Route::patch('/users/{user}/reset-password', [AdminDashboardController::class, 'resetUserPassword'])->name('users.reset-password');
+    Route::post('/users/{user}/impersonate', [AdminDashboardController::class, 'impersonate'])->name('users.impersonate');
+    
+    // Course Oversight
     Route::get('/courses', [AdminDashboardController::class, 'courses'])->name('courses.index');
-    Route::patch('/users/{user}/toggle-status', [AdminDashboardController::class, 'toggleUserStatus'])->name('users.toggle-status');
-    Route::patch('/users/{user}/approve-teacher', [AdminDashboardController::class, 'approveTeacher'])->name('users.approve-teacher');
-    Route::delete('/users/{user}/reject-teacher', [AdminDashboardController::class, 'rejectTeacher'])->name('users.reject-teacher');
-    
-    Route::post('/lessons/bulk-approve', [LessonController::class, 'bulkApprove'])->name('lessons.bulk-approve');
-    
-    Route::patch('/lessons/{lesson}/approve', [LessonController::class, 'approve'])->name('lessons.approve');
     Route::post('/courses', [AdminDashboardController::class, 'storeCourse'])->name('courses.store');
+    Route::patch('/courses/{course}', [AdminDashboardController::class, 'updateCourse'])->name('courses.update');
+    
+    // Secure Bulk/Single Course Actions
+    Route::post('/courses/bulk-status', [AdminDashboardController::class, 'bulkToggleCourseStatus'])->name('courses.bulk-toggle-status');
+    Route::post('/courses/bulk-destroy', [AdminDashboardController::class, 'bulkDestroyCourses'])->name('courses.bulk-destroy');
+    
+    // Material Approval
     Route::get('/materials', [AdminDashboardController::class, 'materials'])->name('materials');
+    Route::post('/settings/material-approval', [AdminDashboardController::class, 'toggleMaterialApproval'])->name('settings.material-approval');
+    Route::post('/lessons/bulk-approve', [LessonController::class, 'bulkApprove'])->name('lessons.bulk-approve');
+    Route::patch('/lessons/{lesson}/approve', [LessonController::class, 'approve'])->name('lessons.approve');
     Route::patch('/materials/{lesson}/archive', [LessonController::class, 'archive'])->name('lessons.archive');
     Route::patch('/lessons/{lesson}/unarchive', [LessonController::class, 'unarchive'])->name('lessons.unarchive');
     Route::patch('/lessons/{lesson}/reject', [LessonController::class, 'reject'])->name('lessons.reject');
-    Route::post('/settings/material-approval', [AdminDashboardController::class, 'toggleMaterialApproval'])->name('settings.material-approval');
     Route::patch('/lessons/{lesson}/update', [LessonController::class, 'update'])->name('lessons.update');
     
-    // GRADES ROUTE
+    // Grades
     Route::get('/grades', [AdminDashboardController::class, 'gradesOverview'])->name('grades.index');
 });
 

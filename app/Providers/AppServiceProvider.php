@@ -5,6 +5,7 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Support\Facades\Schema;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -31,5 +32,6 @@ class AppServiceProvider extends ServiceProvider
                 ->action('Verify My Account', $url)
                 ->line('If you did not request this account, you can safely ignore this email.');
         });
+        Schema::defaultStringLength(191);
     }
 }

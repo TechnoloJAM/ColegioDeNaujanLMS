@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use Illuminate\Auth\Events\Registered;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Socialite\Facades\Socialite;
@@ -12,24 +13,17 @@ use Inertia\Inertia;
 
 class GoogleAuthController extends Controller
 {
-    // Redirect to Google
     public function redirect()
     {
         /** @var \Laravel\Socialite\Two\GoogleProvider $driver */
         $driver = Socialite::driver('google');
 
-        return $driver
-            ->scopes([
-                'openid', 'profile', 'email'
-            ])
-            ->redirect();
+        return $driver->with(['prompt' => 'select_account'])->redirect();
     }
 
-    // Handle return from Google
     public function callback()
     {
         try {
-            /** @var \Laravel\Socialite\Two\User $googleUser */
             $googleUser = Socialite::driver('google')->user();
             
             $user = User::where('email', $googleUser->getEmail())->first();
@@ -39,20 +33,34 @@ class GoogleAuthController extends Controller
                     'name' => $googleUser->getName(),
                     'email' => $googleUser->getEmail(),
                     'google_id' => $googleUser->getId(),
-                    'avatar' => $googleUser->getAvatar(),
+                    'avatar' => $googleUser->getAvatar(), // Pulls Google Avatar automatically
                     'password' => null, 
-                    'role' => 'pending', 
-                    'email_verified_at' => now(), 
+                    'role' => 'student', 
+                    'email_verified_at' => null, 
                 ]);
+                
+                event(new Registered($user));
             } else {
-                if (!$user->google_id) {
-                    $user->update(['google_id' => $googleUser->getId()]);
-                }
+                // Keep avatar synced to their current Google picture every time they log in
+                $user->update([
+                    'google_id' => $googleUser->getId(),
+                    'avatar' => $googleUser->getAvatar(),
+                ]);
+            }
+
+            if ($user->status === 'suspended') {
+                return redirect()->route('login')->withErrors([
+                    'email' => 'SUSPENDED: ' . ($user->suspension_reason ?? 'Your account has been suspended.')
+                ]);
             }
 
             Auth::login($user);
 
-            if ($user->role === 'pending' || empty($user->school_id)) {
+            if (!$user->hasVerifiedEmail()) {
+                return redirect()->route('verification.notice');
+            }
+
+            if (empty($user->school_id)) {
                 return redirect()->route('register.onboarding');
             }
 
@@ -63,7 +71,6 @@ class GoogleAuthController extends Controller
         }
     }
     
-    // Show the Multi-Step Form
     public function onboarding()
     {
         return Inertia::render('Auth/Onboarding', [
@@ -71,12 +78,11 @@ class GoogleAuthController extends Controller
         ]);
     }
 
-    // Save Final Details
     public function completeRegistration(Request $request)
     {
         $request->validate([
             'school_id' => 'required|string|max:50',
-            'program' => 'required|string|max:100', // Validate the new program field
+            'program' => 'required|string|max:100',
             'contact_number' => 'required|string|max:20',
             'password' => 'required|string|min:8|confirmed',
             'terms' => 'accepted',
@@ -85,9 +91,8 @@ class GoogleAuthController extends Controller
         $user = User::find(Auth::id());
         
         $user->update([
-            'role' => 'student', 
             'school_id' => $request->school_id,
-            'program' => $request->program, // Save the new program field
+            'program' => $request->program, 
             'contact_number' => $request->contact_number,
             'password' => Hash::make($request->password),
         ]);

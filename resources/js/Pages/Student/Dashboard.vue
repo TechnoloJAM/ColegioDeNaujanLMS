@@ -6,13 +6,14 @@ const props = defineProps({
     stats: Object,
     upcoming: Array,
     announcements: Array,
-    remedial: Array
+    remedial: Array,
+    recommendations: Array
 });
 
-const joinForm = useForm({ code: '' });
+const joinForm = useForm({ enrollment_code: '' });
 
 const quickJoin = (code) => {
-    joinForm.code = code;
+    joinForm.enrollment_code = code;
     joinForm.post(route('student.courses.join'), {
         onSuccess: () => joinForm.reset(),
     });
@@ -47,32 +48,21 @@ const quickJoin = (code) => {
             </div>
         </div>
 
-        <div v-if="remedial && remedial.length > 0" class="mb-3 animate-fade-in">
-            <div class="bg-red-600 text-white rounded-lg p-2 flex justify-between items-center gap-2 shadow-sm border border-red-700">
-                <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="relative flex h-1.5 w-1.5 shrink-0 ml-0.5">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-200 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
-                    </span>
-                    
-                    <p class="text-[9px] sm:text-[10px] truncate leading-none mt-px">
-                        <b class="font-black uppercase tracking-wider">{{ remedial[0].course_title }}</b> 
-                        <span class="opacity-75 mx-1">-</span> 
-                        <span class="font-medium">{{ remedial[0].remedial_tip }}</span>
-                    </p>
+        <div v-if="recommendations && recommendations.length > 0" class="mb-5">
+            <div class="flex items-center gap-2 mb-2">
+                <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Academic Insights</h2>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div v-for="rec in recommendations" :key="rec.id" class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                    <span class="text-[8px] font-black uppercase text-red-600 bg-red-50 px-2 py-0.5 rounded">{{ rec.category }}</span>
+                    <p class="mt-2 text-sm font-bold text-slate-800">{{ rec.recommendation_text }}</p>
+                    <p class="mt-2 text-[10px] text-slate-500 italic">Reason: {{ rec.reasoning }}</p>
                 </div>
-                
-                <Link :href="route('student.courses.show', { course: remedial[0].course_id, tab: remedial[0].remedial_type === 'lesson' ? 'materials' : 'assignments', target: remedial[0].id })" 
-                      class="shrink-0 text-[8px] sm:text-[9px] font-bold bg-white text-red-700 uppercase tracking-widest px-2 py-1 rounded hover:bg-red-50 transition-colors leading-none shadow-sm">
-                    Resolve
-                </Link>
             </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4 items-start">
-            
             <div class="md:col-span-1 lg:col-span-2 space-y-3 md:space-y-4">
-                
                 <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
                     <div class="px-3 py-2 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
                         <h3 class="text-[10px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-1.5">
@@ -103,15 +93,25 @@ const quickJoin = (code) => {
             </div>
 
             <div class="space-y-3 md:space-y-4">
-                
                 <div class="bg-white dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
                     <h3 class="text-[10px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                         <svg class="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                         Join Class
                     </h3>
-                    <form @submit.prevent="joinForm.post(route('student.courses.join'), { onSuccess: () => joinForm.reset() })" class="flex gap-1.5">
-                        <input v-model="joinForm.code" type="text" placeholder="CODE" class="flex-1 py-1 px-2 h-7 rounded border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-[10px] font-mono uppercase tracking-widest focus:ring-1 focus:ring-blue-500">
-                        <button :disabled="joinForm.processing || !joinForm.code" class="bg-slate-900 dark:bg-blue-600 text-white px-2.5 h-7 rounded text-[9px] font-bold uppercase transition disabled:opacity-50">Join</button>
+                    
+                    <div v-if="$page.props.flash && $page.props.flash.success" class="mb-2 p-1.5 bg-emerald-50 text-emerald-600 rounded text-[9px] font-bold uppercase tracking-widest border border-emerald-100 dark:bg-emerald-900/30 dark:border-emerald-800/50">
+                        {{ $page.props.flash.success }}
+                    </div>
+
+                    <form @submit.prevent="joinForm.post(route('student.courses.join'), { onSuccess: () => joinForm.reset() })" class="flex flex-col gap-1.5">
+                        <div class="flex gap-1.5">
+                            <input v-model="joinForm.enrollment_code" type="text" placeholder="CODE" class="flex-1 py-1 px-2 h-7 rounded border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-[10px] font-mono uppercase tracking-widest focus:ring-1 focus:ring-blue-500">
+                            <button :disabled="joinForm.processing || !joinForm.enrollment_code" class="bg-slate-900 dark:bg-blue-600 text-white px-2.5 h-7 rounded text-[9px] font-bold uppercase transition disabled:opacity-50">Join</button>
+                        </div>
+                        
+                        <div v-if="joinForm.errors.enrollment_code" class="text-red-500 font-bold text-[9px] uppercase tracking-widest mt-1">
+                            {{ joinForm.errors.enrollment_code }}
+                        </div>
                     </form>
                 </div>
 
@@ -140,7 +140,6 @@ const quickJoin = (code) => {
                         <p class="text-[10px] text-slate-500 font-medium">No new updates this week.</p>
                     </div>
                 </div>
-
             </div>
         </div>
     </AuthenticatedLayout>

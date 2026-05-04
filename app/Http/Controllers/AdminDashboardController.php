@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Auth\Events\Registered;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules;
 use App\Models\User;
 use App\Models\Course;
@@ -78,59 +78,6 @@ class AdminDashboardController extends Controller
         ]);
     }
 
-    public function toggleUserStatus(Request $request, User $user)
-    {
-        if ($user->status === 'suspended') {
-            $user->update([
-                'status' => 'active', 
-                'suspension_reason' => null
-            ]);
-            return back()->with('success', "User account has been reactivated.");
-        } else {
-            $request->validate(['reason' => 'required|string|max:500']);
-            $user->update([
-                'status' => 'suspended', 
-                'suspension_reason' => $request->reason
-            ]);
-            return back()->with('success', "User account has been suspended.");
-        }
-    }
-
-    public function approveTeacher(User $user)
-    {
-        if ($user->role === 'pending_teacher') {
-            $user->update(['role' => 'teacher']);
-            return back()->with('success', 'Teacher account approved successfully.');
-        }
-
-        return back()->with('error', 'This user did not request a teacher account.');
-    }
-
-    public function courses()
-    {
-        $courses = Course::with(['teacher:id,name', 'enrollments'])
-            ->withCount('lessons', 'assignments')
-            ->latest()
-            ->get();
-
-        $teachers = User::where('role', 'teacher')->select('id', 'name')->get();
-
-        return Inertia::render('Admin/CourseOversight', [
-            'courses' => $courses,
-            'teachers' => $teachers
-        ]);
-    }
-
-    public function rejectTeacher(User $user)
-    {
-        if ($user->role === 'pending_teacher') {
-            $user->delete();
-            return back()->with('success', 'Teacher request rejected and account removed.');
-        }
-
-        return back()->with('error', 'Only pending teacher requests can be rejected.');
-    }
-
     public function storeUser(Request $request)
     {
         $request->validate([
@@ -151,12 +98,150 @@ class AdminDashboardController extends Controller
             'program' => $request->program,
             'contact_number' => $request->contact_number,
             'password' => Hash::make($request->password),
-            'email_verified_at' => null,
+            'email_verified_at' => now(), 
         ]);
 
-        $user->sendEmailVerificationNotification();
+        return back()->with('success', ucfirst($request->role) . ' account created and automatically verified.');
+    }
 
-        return back()->with('success', ucfirst($request->role) . ' account created successfully. A verification email has been sent to them.');
+    public function bulkToggleUserStatus(Request $request)
+    {
+        $request->validate([
+            'user_ids' => 'required|array',
+            'user_ids.*' => 'exists:users,id',
+            'action' => 'required|in:suspend,reactivate',
+            'reason' => 'required_if:action,suspend|nullable|string|max:500',
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, auth()->user()->password)) {
+            return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        if (in_array(auth()->id(), $request->user_ids) && $request->action === 'suspend') {
+            return back()->withErrors(['password' => 'You cannot suspend your own admin account.']);
+        }
+
+        if ($request->action === 'suspend') {
+            User::whereIn('id', $request->user_ids)->update([
+                'status' => 'suspended',
+                'suspension_reason' => $request->reason
+            ]);
+            $msg = ' suspended.';
+        } else {
+            User::whereIn('id', $request->user_ids)->update([
+                'status' => 'active',
+                'suspension_reason' => null
+            ]);
+            $msg = ' reactivated.';
+        }
+
+        return back()->with('success', count($request->user_ids) . ' user(s)' . $msg);
+    }
+
+    public function bulkDestroyUsers(Request $request)
+    {
+        $request->validate([
+            'user_ids' => 'required|array',
+            'user_ids.*' => 'exists:users,id',
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, auth()->user()->password)) {
+            return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        if (in_array(auth()->id(), $request->user_ids)) {
+            return back()->withErrors(['password' => 'You cannot permanently delete your own admin account.']);
+        }
+
+        User::whereIn('id', $request->user_ids)->delete();
+        return back()->with('success', count($request->user_ids) . ' user(s) permanently deleted.');
+    }
+
+    public function updateRole(Request $request, User $user)
+    {
+        $request->validate([
+            'role' => 'required|in:admin,teacher,student',
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, auth()->user()->password)) {
+            return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        if ($user->id === auth()->id() && $request->role !== 'admin') {
+            return back()->withErrors(['password' => 'You cannot demote your own admin account.']);
+        }
+
+        $user->update(['role' => $request->role]);
+        return back()->with('success', "{$user->name} is now a " . ucfirst($request->role) . ".");
+    }
+
+    public function resetUserPassword(Request $request, User $user)
+    {
+        $request->validate([
+            'password' => ['required', Rules\Password::defaults()],
+            'admin_password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->admin_password, auth()->user()->password)) {
+            return back()->withErrors(['admin_password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        $user->update([
+            'password' => Hash::make($request->password)
+        ]);
+
+        return back()->with('success', "Password for {$user->name} has been successfully reset.");
+    }
+
+    public function impersonate(Request $request, User $user)
+    {
+        $request->validate([
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, auth()->user()->password)) {
+            return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        if ($user->id === auth()->id()) {
+            return back()->withErrors(['password' => 'You are already logged into this account.']);
+        }
+
+        $adminId = auth()->id();
+        auth()->login($user);
+        session()->put('impersonate_admin_id', $adminId);
+        
+        return redirect()->route('dashboard')->with('success', "You are now impersonating {$user->name}.");
+    }
+
+    public function restoreAdminSession()
+    {
+        if (session()->has('impersonate_admin_id')) {
+            $adminId = session()->get('impersonate_admin_id');
+            session()->forget('impersonate_admin_id');
+            auth()->loginUsingId($adminId);
+            return redirect()->route('admin.users.index')->with('success', 'Welcome back to the Admin Dashboard.');
+        }
+        
+        return redirect()->route('dashboard');
+    }
+
+    public function courses()
+    {
+        $courses = Course::with(['teacher:id,name', 'enrollments'])
+            ->withCount('lessons', 'assignments')
+            ->latest()
+            ->get();
+
+        $teachers = User::where('role', 'teacher')->where('status', 'active')->select('id', 'name')->get();
+
+        return Inertia::render('Admin/CourseOversight', [
+            'courses' => $courses,
+            'teachers' => $teachers
+        ]);
     }
 
     public function storeCourse(Request $request)
@@ -187,6 +272,31 @@ class AdminDashboardController extends Controller
         return back()->with('success', 'Course created and assigned successfully.');
     }
 
+    public function updateCourse(Request $request, Course $course)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'difficulty_level' => 'required|in:beginner,intermediate,advanced,final',
+            'teacher_id' => 'required|exists:users,id',
+            'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        ]);
+
+        $data = $request->only('title', 'description', 'difficulty_level', 'teacher_id');
+
+        if ($request->hasFile('thumbnail')) {
+            if ($course->thumbnail) {
+                $oldPath = str_replace('/storage/', '', $course->thumbnail);
+                Storage::disk('public')->delete($oldPath);
+            }
+            $path = $request->file('thumbnail')->store('thumbnails', 'public');
+            $data['thumbnail'] = '/storage/' . $path;
+        }
+
+        $course->update($data);
+        return back()->with('success', 'Course updated successfully.');
+    }
+
     public function materials()
     {
         $materials = Lesson::with(['course:id,title,teacher_id', 'course.teacher:id,name'])
@@ -215,18 +325,23 @@ class AdminDashboardController extends Controller
         $newValue = $setting->value === 'true' ? 'false' : 'true';
         $setting->update(['value' => $newValue]);
         
+        // FIX #4: Approval Limbo Rescue
+        // If the admin turns off approval, auto-approve any trapped pending materials.
+        if ($newValue === 'false') {
+            Lesson::where('approval_status', 'pending')->update(['approval_status' => 'approved']);
+        }
+        
         $status = $newValue === 'true' ? 'enabled' : 'disabled';
-        return back()->with('success', "Material approval system is now {$status}.");
+        return back()->with('success', "Material approval system is now {$status}. Pending materials updated.");
     }
 
-    // UPDATED GRADES OVERVIEW: Now calculates Assignments, Activities, and PTs individually
     public function gradesOverview()
     {
         $courses = Course::with(['teacher:id,name', 'assignments'])
             ->with(['enrollments' => function($q) {
                 $q->where('status', 'approved')->with(['user' => function($userQ) {
                     $userQ->with(['submissions' => function($subQ) {
-                        $subQ->with('assignment:id,type'); // Needed to categorize scores
+                        $subQ->with('assignment:id,type');
                     }]);
                 }]);
             }])
@@ -234,23 +349,24 @@ class AdminDashboardController extends Controller
             ->get();
 
         $formattedData = $courses->map(function ($course) {
-            
             $assignments = $course->assignments;
             $totalCoursePoints = $assignments->sum('points');
             
-            // Calculate Maximums per category
             $maxAssignment = $assignments->where('type', 'assignment')->sum('points');
             $maxActivity = $assignments->where('type', 'activity')->sum('points');
             $maxPT = $assignments->where('type', 'performance_task')->sum('points');
 
-            $studentsData = $course->enrollments->map(function ($enrollment) use ($course, $totalCoursePoints) {
+            $studentsData = $course->enrollments->filter(function($enrollment) {
+                return $enrollment->user !== null;
+            })->map(function ($enrollment) use ($course, $totalCoursePoints) {
+                
                 $student = $enrollment->user;
                 $studentTotal = 0;
                 $assignmentScore = 0;
                 $activityScore = 0;
                 $ptScore = 0;
 
-                if ($student && $course->assignments->isNotEmpty()) {
+                if ($course->assignments->isNotEmpty()) {
                      $courseAssignmentIds = $course->assignments->pluck('id')->toArray();
                      $submissions = $student->submissions->whereIn('assignment_id', $courseAssignmentIds);
 
@@ -268,9 +384,9 @@ class AdminDashboardController extends Controller
                 $percentage = $totalCoursePoints > 0 ? round(($studentTotal / $totalCoursePoints) * 100, 1) : 0;
 
                 return [
-                    'id' => $student->id ?? 0,
-                    'name' => $student->name ?? 'Unknown',
-                    'email' => $student->email ?? '',
+                    'id' => $student->id,
+                    'name' => $student->name,
+                    'email' => $student->email,
                     'total_score' => $studentTotal,
                     'assignment_score' => $assignmentScore,
                     'activity_score' => $activityScore,

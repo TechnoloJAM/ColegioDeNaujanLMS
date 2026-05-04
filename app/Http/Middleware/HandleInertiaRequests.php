@@ -7,41 +7,31 @@ use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
-    /**
-     * The root template that is loaded on the first page visit.
-     *
-     * @var string
-     */
     protected $rootView = 'app';
 
-    /**
-     * Determine the current asset version.
-     */
     public function version(Request $request): ?string
     {
         return parent::version($request);
     }
 
-    /**
-     * Define the props that are shared by default.
-     *
-     * @return array<string, mixed>
-     */
     public function share(Request $request): array
     {
-        return [
-            ...parent::share($request),
+        $user = $request->user();
+
+        return array_merge(parent::share($request), [
             'auth' => [
-                'user' => $request->user(),
-                // NEW: Pass unread notifications if user is logged in
-                'notifications' => $request->user() ? $request->user()->unreadNotifications()->take(5)->get() : [],
-                'unread_count' => $request->user() ? $request->user()->unreadNotifications()->count() : 0,
+                'user' => $user,
+                // FIX: Corrected session key to trigger the yellow banner
+                'is_impersonating' => $request->session()->has('impersonate_admin_id'),
+                
+                'notifications' => $user ? $user->notifications()->take(10)->get() : [],
+                'unread_count' => $user ? $user->unreadNotifications()->count() : 0,
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
                 'status' => fn () => $request->session()->get('status'),
             ],
-        ];
+        ]);
     }
 }

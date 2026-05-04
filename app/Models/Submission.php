@@ -2,33 +2,33 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 
 class Submission extends Model
 {
-    protected $fillable = [
-        'assignment_id', 
-        'student_id', 
-        'file_paths', 
-        'text_content',
-        'grade', 
-        'feedback', 
-        'submitted_at'
-    ];
+    use HasFactory; 
 
-    protected $casts = [
-        'file_paths' => 'array', // Automatically handle JSON
-        'submitted_at' => 'datetime',
-    ];
+    protected $fillable = ['assignment_id', 'user_id', 'file_paths', 'text_content', 'grade', 'feedback'];
 
-    public function assignment(): BelongsTo
+    protected static function boot()
     {
-        return $this->belongsTo(Assignment::class);
+        parent::boot();
+
+        static::deleting(function ($submission) {
+            if ($submission->file_paths) {
+                $paths = json_decode($submission->file_paths, true);
+                if (is_array($paths)) {
+                    foreach ($paths as $path) {
+                        Storage::disk('public')->delete($path);
+                    }
+                }
+            }
+        });
     }
 
-    public function student(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'student_id');
-    }
+    public function assignment() { return $this->belongsTo(Assignment::class); }
+    public function user() { return $this->belongsTo(User::class, 'user_id'); }
+    public function student() { return $this->belongsTo(User::class, 'user_id'); }
 }

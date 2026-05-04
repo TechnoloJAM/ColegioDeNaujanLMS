@@ -6,6 +6,7 @@ use App\Models\Course;
 use App\Models\User;
 use App\Models\Submission;
 use App\Models\Assignment;
+use App\Models\Enrollment; // ADDED THIS
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -19,12 +20,14 @@ class TeacherDashboardController extends Controller
         // 1. Calculate Real Stats
         $activeCourses = Course::where('teacher_id', $teacherId)->count();
         
-        $totalStudents = Course::where('teacher_id', $teacherId)
-            ->withCount(['enrollments' => function($q) {
-                $q->where('status', 'approved');
-            }])
-            ->get()
-            ->sum('enrollments_count');
+        // FIX: Counts ONLY unique students, and completely ignores deleted 'ghost' accounts!
+        $totalStudents = Enrollment::whereHas('course', function($q) use ($teacherId) {
+                $q->where('teacher_id', $teacherId);
+            })
+            ->whereHas('user') // Ensures the user actually exists in the database
+            ->where('status', 'approved')
+            ->distinct('user_id')
+            ->count('user_id');
 
         $pendingSubmissions = Submission::whereHas('assignment.course', function($q) use ($teacherId) {
             $q->where('teacher_id', $teacherId);
@@ -38,10 +41,13 @@ class TeacherDashboardController extends Controller
                 $q->whereNull('grade');
             }])
             ->with('course:id,title')
-            ->having('ungraded_count', '>', 0)
-            ->orderByDesc('ungraded_count')
-            ->limit(5)
             ->get()
+            ->filter(function ($assignment) {
+                return $assignment->ungraded_count > 0;
+            })
+            ->sortByDesc('ungraded_count')
+            ->take(5)
+            ->values()
             ->map(function($assignment) {
                 return [
                     'id' => $assignment->id,

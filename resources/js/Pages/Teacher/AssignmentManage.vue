@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import Modal from '@/Components/Modal.vue';
+import InputError from '@/Components/InputError.vue'; 
 import { 
     ChevronLeft, Clock, Trophy, 
     FileText, Edit3, Trash2, Paperclip, ExternalLink, Eye, Download 
@@ -35,7 +36,22 @@ const formatDateForInput = (dateString) => {
     return new Date(dateString).toISOString().slice(0, 16);
 };
 
+// Calculate current local datetime
+const minDateTime = computed(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+});
+
+// Safeguard: If the assignment already has a past due date, allow that date as the minimum 
+// so the teacher isn't blocked from making simple text edits to old assignments.
+const minDueDateTime = computed(() => {
+    const originalDue = formatDateForInput(props.assignment.due_date);
+    return (originalDue && originalDue < minDateTime.value) ? originalDue : minDateTime.value;
+});
+
 const editForm = useForm({
+    _method: 'patch',
     title: props.assignment.title,
     description: props.assignment.description,
     type: props.assignment.type || 'assignment',
@@ -48,6 +64,16 @@ const editForm = useForm({
 const gradeForm = useForm({ grade: '', feedback: '' });
 
 const linkify = (text) => text ? text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline font-bold">$1</a>') : 'No instructions provided.';
+
+const getAssignmentPaths = (assignment) => {
+    if (!assignment || !assignment.attachment_paths) return [];
+    if (Array.isArray(assignment.attachment_paths)) return assignment.attachment_paths;
+    try { 
+        return JSON.parse(assignment.attachment_paths) || []; 
+    } catch (e) { 
+        return []; 
+    }
+};
 
 const getPaths = (submission) => {
     if (!submission || !submission.file_paths) return [];
@@ -63,10 +89,12 @@ const currentFilePath = computed(() => {
 });
 
 const updateAssignment = () => {
-    editForm.patch(route('teacher.assignments.update', props.assignment.id), {
+    editForm.post(route('teacher.assignments.update', props.assignment.id), {
         preserveScroll: true,
+        forceFormData: true,
         onSuccess: () => {
             isEditing.value = false;
+            editForm.files = []; 
         },
     });
 };
@@ -82,6 +110,7 @@ const openGradeModal = (submission) => {
     currentFileIndex.value = 0;
     gradeForm.grade = submission.grade || '';
     gradeForm.feedback = submission.feedback || '';
+    gradeForm.clearErrors(); 
     showGradeModal.value = true;
 };
 
@@ -147,20 +176,18 @@ const submitGrade = () => {
                             <div class="prose dark:prose-invert max-w-none text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed" v-html="linkify(assignment.description)"></div>
                         </div>
 
-                        <div v-if="assignment.attachment_paths" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 sm:p-5 shadow-sm">
+                        <div v-if="getAssignmentPaths(assignment).length > 0" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 sm:p-5 shadow-sm">
                             <div class="flex items-center gap-2 mb-3 text-slate-400">
                                 <Paperclip class="w-3.5 h-3.5" />
                                 <h2 class="text-[10px] font-black uppercase tracking-widest">Attached Resources</h2>
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <template v-if="assignment.attachment_paths">
-                                    <div v-for="(path, index) in JSON.parse(assignment.attachment_paths)" :key="index">
-                                        <a :href="getFileUrl(path)" target="_blank" class="flex items-center justify-between p-2.5 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition group">
-                                            <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 group-hover:text-blue-600 truncate mr-2">Resource File {{ index + 1 }}</span>
-                                            <ExternalLink class="w-3 h-3 text-slate-300 group-hover:text-blue-500 shrink-0" />
-                                        </a>
-                                    </div>
-                                </template>
+                                <div v-for="(path, index) in getAssignmentPaths(assignment)" :key="index">
+                                    <a :href="getFileUrl(path)" target="_blank" class="flex items-center justify-between p-2.5 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition group">
+                                        <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 group-hover:text-blue-600 truncate mr-2">Resource File {{ index + 1 }}</span>
+                                        <ExternalLink class="w-3 h-3 text-slate-300 group-hover:text-blue-500 shrink-0" />
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -231,6 +258,7 @@ const submitGrade = () => {
                         <div>
                             <label class="block text-[9px] font-black uppercase text-slate-500 mb-1 tracking-widest">Title</label>
                             <input v-model="editForm.title" type="text" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-xs focus:ring-2 focus:ring-blue-500 transition" required />
+                            <InputError class="mt-1 text-[9px]" :message="editForm.errors.title" />
                         </div>
                         
                         <div class="grid grid-cols-2 gap-3">
@@ -241,27 +269,39 @@ const submitGrade = () => {
                                     <option value="activity">Activity</option>
                                     <option value="performance_task">Performance Task</option>
                                 </select>
+                                <InputError class="mt-1 text-[9px]" :message="editForm.errors.type" />
                             </div>
                             <div>
                                 <label class="block text-[9px] font-black uppercase text-slate-500 mb-1 tracking-widest">Points</label>
                                 <input v-model="editForm.points" type="number" min="0" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-xs focus:ring-2 focus:ring-blue-500 transition" required />
+                                <InputError class="mt-1 text-[9px]" :message="editForm.errors.points" />
                             </div>
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
                             <div>
                                 <label class="block text-[9px] font-black uppercase text-slate-500 mb-1 tracking-widest">Due Date (Soft Deadline)</label>
-                                <input v-model="editForm.due_date" type="datetime-local" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 transition dark:[color-scheme:dark]" required />
+                                <input v-model="editForm.due_date" :min="minDueDateTime" type="datetime-local" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 transition dark:[color-scheme:dark]" required />
+                                <InputError class="mt-1 text-[9px]" :message="editForm.errors.due_date" />
                             </div>
                             <div>
                                 <label class="block text-[9px] font-black uppercase text-slate-500 mb-1 tracking-widest">Closing Date (Hard Deadline)</label>
-                                <input v-model="editForm.closing_date" type="datetime-local" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 transition dark:[color-scheme:dark]" />
+                                <input v-model="editForm.closing_date" :min="editForm.due_date || minDueDateTime" type="datetime-local" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 transition dark:[color-scheme:dark]" />
+                                <InputError class="mt-1 text-[9px]" :message="editForm.errors.closing_date" />
                             </div>
                         </div>
 
                         <div>
                             <label class="block text-[9px] font-black uppercase text-slate-500 mb-1 tracking-widest">Instructions</label>
                             <textarea v-model="editForm.description" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-xs h-24 focus:ring-2 focus:ring-blue-500 transition resize-none"></textarea>
+                            <InputError class="mt-1 text-[9px]" :message="editForm.errors.description" />
+                        </div>
+                        
+                        <div>
+                            <label class="block text-[9px] font-black uppercase text-slate-500 mb-1 tracking-widest">Replace/Add Attachments (Optional)</label>
+                            <input type="file" multiple @change="e => editForm.files = Array.from(e.target.files)" class="w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-bold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-lg p-1 transition" />
+                            <p class="text-[8px] text-slate-500 mt-1 uppercase font-bold">Note: Uploading new files will overwrite all existing attachments.</p>
+                            <InputError class="mt-1 text-[9px]" :message="editForm.errors.files" />
                         </div>
                     </div>
 
@@ -274,6 +314,7 @@ const submitGrade = () => {
             
             <div v-else class="animate-in fade-in duration-300">
                 <div v-if="(activeTab === 'grading' ? toBeGraded : graded).length > 0" class="flex flex-col gap-2">
+                    
                     <div v-for="sub in (activeTab === 'grading' ? toBeGraded : graded)" :key="sub.id" 
                          @click="openGradeModal(sub)"
                          class="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm gap-3 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 transition">
@@ -281,7 +322,13 @@ const submitGrade = () => {
                         <div class="flex items-center gap-3 min-w-0">
                             <div class="w-8 h-8 shrink-0 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-300 font-black text-xs">{{ sub.student.name.charAt(0) }}</div> 
                             <div class="truncate">
-                                <div class="font-black text-xs sm:text-sm text-slate-900 dark:text-white truncate">{{ sub.student.name }}</div>
+                                <div class="flex items-center gap-2">
+                                    <div class="font-black text-xs sm:text-sm text-slate-900 dark:text-white truncate">{{ sub.student.name }}</div>
+                                    <span v-if="assignment.due_date && new Date(sub.created_at) > new Date(assignment.due_date)" 
+                                          class="px-1.5 py-0.5 bg-red-100 text-red-600 border border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800 rounded text-[8px] font-black uppercase tracking-widest shrink-0 shadow-sm">
+                                        Late
+                                    </span>
+                                </div>
                                 <div class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5 truncate">{{ new Date(sub.created_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) }}</div>
                             </div>
                         </div>
@@ -312,8 +359,14 @@ const submitGrade = () => {
                     <div class="flex items-center gap-2.5 min-w-0">
                         <div class="w-7 h-7 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center font-black text-[10px]">{{ selectedSubmission?.student.name.charAt(0) }}</div>
                         <div class="truncate">
-                            <h3 class="font-black text-xs truncate">{{ selectedSubmission?.student.name }}</h3>
-                            <p class="text-[8px] font-bold uppercase tracking-widest text-slate-500 truncate">Sub: {{ new Date(selectedSubmission?.created_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) }}</p>
+                            <div class="flex items-center gap-2">
+                                <h3 class="font-black text-xs truncate">{{ selectedSubmission?.student.name }}</h3>
+                                <span v-if="assignment.due_date && selectedSubmission && new Date(selectedSubmission.created_at) > new Date(assignment.due_date)" 
+                                      class="px-1.5 py-0.5 bg-red-100 text-red-600 border border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800 rounded text-[8px] font-black uppercase tracking-widest shrink-0 shadow-sm">
+                                    Late
+                                </span>
+                            </div>
+                            <p class="text-[8px] font-bold uppercase tracking-widest text-slate-500 truncate mt-0.5">Sub: {{ new Date(selectedSubmission?.created_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) }}</p>
                         </div>
                     </div>
                     <button @click="showGradeModal = false" class="w-7 h-7 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-300 transition shrink-0">&times;</button>
@@ -379,10 +432,12 @@ const submitGrade = () => {
                                         <input v-model="gradeForm.grade" type="number" class="w-20 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-center font-black text-sm focus:ring-2 focus:ring-blue-500 transition" required :max="assignment.points" min="0" />
                                         <span class="text-slate-400 font-black text-[10px] uppercase tracking-widest">/ {{ assignment.points }} Pts</span>
                                     </div>
+                                    <InputError class="mt-1 text-[9px]" :message="gradeForm.errors.grade" />
                                 </div>
                                 <div class="flex-1 flex flex-col">
                                     <label class="block text-[9px] font-black text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-widest">Feedback</label>
                                     <textarea v-model="gradeForm.feedback" class="w-full flex-1 min-h-[80px] md:min-h-[120px] bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-[11px] resize-none focus:ring-2 focus:ring-blue-500 transition" placeholder="Add comments..."></textarea>
+                                    <InputError class="mt-1 text-[9px]" :message="gradeForm.errors.feedback" />
                                 </div>
                                 <button :disabled="gradeForm.processing" class="w-full justify-center bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest py-2.5 rounded-lg text-[10px] shadow-md transition shrink-0">Submit Grade</button>
                             </form>

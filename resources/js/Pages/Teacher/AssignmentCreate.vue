@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
 import { FilePlus2, ChevronLeft, Paperclip } from 'lucide-vue-next';
+import { computed } from 'vue'; // Added import
 
 const props = defineProps({
     course: Object,
@@ -18,6 +19,13 @@ const form = useForm({
     due_date: '',
     closing_date: '',
     files: [],
+});
+
+// Calculate current local datetime for the calendar restrictions
+const minDateTime = computed(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
 });
 
 const goBack = () => {
@@ -88,13 +96,13 @@ const submit = () => {
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Due Date (Soft Deadline) <span class="text-red-500">*</span></label>
-                            <input v-model="form.due_date" type="datetime-local" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm dark:[color-scheme:dark]" required />
+                            <input v-model="form.due_date" :min="minDateTime" type="datetime-local" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm dark:[color-scheme:dark]" required />
                             <InputError class="mt-1 text-[9px]" :message="form.errors.due_date" />
                         </div>
                         
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Closing Date (Hard Deadline)</label>
-                            <input v-model="form.closing_date" type="datetime-local" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm dark:[color-scheme:dark]" />
+                            <input v-model="form.closing_date" :min="form.due_date || minDateTime" type="datetime-local" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm dark:[color-scheme:dark]" />
                             <InputError class="mt-1 text-[9px]" :message="form.errors.closing_date" />
                         </div>
                     </div>

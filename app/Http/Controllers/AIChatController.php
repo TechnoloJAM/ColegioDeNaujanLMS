@@ -44,30 +44,29 @@ class AIChatController extends Controller
         $context = $systemPrompt . "\n\nCURRENT DATA CONTEXT:\n";
         
         if ($user->role === 'student') {
-            // Get only approved courses for this specific student
             $enrolled = $user->enrolledCourses()->wherePivot('status', 'approved')->get();
             
             if ($enrolled->isNotEmpty()) {
                 $context .= "- Enrolled Courses: " . $enrolled->pluck('title')->implode(', ') . "\n";
                 
-                // Get pending assignments with due dates
                 $courseIds = $enrolled->pluck('id');
                 $pending = Assignment::whereIn('course_id', $courseIds)
                     ->whereDoesntHave('submissions', function($q) use ($user) {
-                        $q->where('student_id', $user->id);
+                        // CRITICAL FIX: Changed student_id to user_id
+                        $q->where('user_id', $user->id); 
                     })
                     ->orderBy('due_date', 'asc')
                     ->take(5)
-                    ->get()
-                    ->map(fn($a) => "{$a->title} (Due: {$a->due_date})")
-                    ->implode(', ');
+                    ->get();
                     
-                if ($pending) $context .= "- Pending Tasks: {$pending}\n";
+                if ($pending->isNotEmpty()) {
+                    $pendingTasks = $pending->map(fn($a) => "{$a->title} (Due: {$a->due_date})")->implode(', ');
+                    $context .= "- Pending Tasks: {$pendingTasks}\n";
+                }
             } else {
                 $context .= "- Status: Not currently attending any approved classes.\n";
             }
         } elseif ($user->role === 'teacher') {
-            // Context aware of the teacher's own courses
             $myCourses = Course::where('teacher_id', $user->id)->pluck('title')->implode(', ');
             $context .= "- Your Managed Courses: {$myCourses}\n";
         }
