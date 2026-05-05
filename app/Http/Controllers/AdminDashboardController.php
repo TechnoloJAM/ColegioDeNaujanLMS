@@ -16,65 +16,76 @@ use Carbon\Carbon;
 
 class AdminDashboardController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $totalUsers = User::count();
-        $totalCourses = Course::count();
-        $totalEnrollments = Enrollment::count();
-        $pendingMaterials = Lesson::where('approval_status', 'pending')->count();
+        $range = $request->query('range', '6_months');
 
-        $teachers = User::where('role', 'teacher')->count();
-        $students = User::where('role', 'student')->count();
-        $admins = User::where('role', 'admin')->count();
+        $stats = [
+            'totalUsers' => User::count(),
+            'activeUsers' => User::where('status', 'active')->count(),
+            'suspendedUsers' => User::where('status', 'suspended')->count(),
+            'students' => User::where('role', 'student')->count(),
+            'teachers' => User::where('role', 'teacher')->count(),
+            'totalCourses' => Course::count(),
+            'activeCourses' => Course::where('is_published', true)->count(),
+            'totalEnrollments' => Enrollment::count(),
+            'pendingMaterials' => Lesson::where('approval_status', 'pending')->count(),
+            'pendingEnrollments' => Enrollment::where('status', 'pending')->count(),
+        ];
 
-        $sixMonthsAgo = Carbon::now()->subMonths(5)->startOfMonth();
-        $enrollmentsOverTime = Enrollment::where('created_at', '>=', $sixMonthsAgo)
-            ->get()
-            ->groupBy(function($date) {
-                return Carbon::parse($date->created_at)->format('M Y');
-            })
-            ->map(function($group) {
-                return $group->count();
-            });
-
+        // 2. Dynamic Line Chart Data
         $labels = [];
         $data = [];
-        for ($i = 5; $i >= 0; $i--) {
-            $month = Carbon::now()->subMonths($i)->format('M Y');
-            $labels[] = $month;
-            $data[] = $enrollmentsOverTime->has($month) ? $enrollmentsOverTime[$month] : 0;
+
+        if ($range === '7_days') {
+            for ($i = 6; $i >= 0; $i--) {
+                $labels[] = now()->subDays($i)->format('M d');
+                $data[] = Enrollment::whereDate('created_at', now()->subDays($i))->count();
+            }
+        } elseif ($range === '30_days') {
+            for ($i = 29; $i >= 0; $i--) {
+                $labels[] = now()->subDays($i)->format('M d');
+                $data[] = Enrollment::whereDate('created_at', now()->subDays($i))->count();
+            }
+        } elseif ($range === 'year') {
+            for ($i = 11; $i >= 0; $i--) {
+                $labels[] = now()->subMonths($i)->format('M Y');
+                $data[] = Enrollment::whereYear('created_at', now()->subMonths($i)->year)
+                                    ->whereMonth('created_at', now()->subMonths($i)->month)
+                                    ->count();
+            }
+        } else { // default 6_months
+            for ($i = 5; $i >= 0; $i--) {
+                $labels[] = now()->subMonths($i)->format('M Y');
+                $data[] = Enrollment::whereYear('created_at', now()->subMonths($i)->year)
+                                    ->whereMonth('created_at', now()->subMonths($i)->month)
+                                    ->count();
+            }
         }
 
-        $recentCourses = Course::with('teacher')
-            ->latest()
-            ->take(5)
-            ->get();
-
         return Inertia::render('Admin/Dashboard', [
-            'stats' => [
-                'totalUsers' => $totalUsers,
-                'totalCourses' => $totalCourses,
-                'totalEnrollments' => $totalEnrollments,
-                'pendingMaterials' => $pendingMaterials,
-            ],
+            'stats' => $stats,
             'demographics' => [
                 'labels' => ['Students', 'Teachers', 'Admins'],
-                'data' => [$students, $teachers, $admins]
+                'data' => [$stats['students'], $stats['teachers'], User::where('role', 'admin')->count()]
             ],
             'enrollmentTrend' => [
                 'labels' => $labels,
                 'data' => $data
             ],
-            'recentCourses' => $recentCourses
+            'currentRange' => $range,
+            'recentCourses' => Course::with('teacher')->latest()->take(5)->get()
         ]);
     }
 
     public function users()
     {
         return Inertia::render('Admin/UserManagement', [
-            'users' => User::select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'created_at')
+            'users' => User::with('enrolledCourses:id,title')
+                ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at')
                 ->orderBy('name')
-                ->get()
+                ->get(),
+            'courses' => \App\Models\Course::select('id', 'title')->orderBy('title')->get()
         ]);
     }
 

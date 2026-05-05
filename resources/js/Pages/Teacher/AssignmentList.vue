@@ -2,14 +2,14 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
-import { ClipboardList, Plus, ChevronRight, Clock, CheckCircle2, AlertCircle } from 'lucide-vue-next';
+import { ClipboardList, Plus, ChevronRight, Clock, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-vue-next';
 
 const props = defineProps({
     courses: Array
 });
 
 const selectedCourseId = ref(props.courses.length > 0 ? props.courses[0].id : null);
-const activeTab = ref('upcoming');
+const activeTab = ref('needs_grading'); // Default to Needs Grading if there's work to do
 const sortOrder = ref('desc'); 
 const imageErrors = ref({});
 
@@ -28,6 +28,12 @@ const countUpcoming = (assignments) => {
     }).length;
 };
 
+// Calculate total assignments that need grading in the selected course
+const totalNeedsGrading = computed(() => {
+    if (!selectedCourse.value || !selectedCourse.value.assignments) return 0;
+    return selectedCourse.value.assignments.reduce((sum, a) => sum + (a.ungraded_count || 0), 0);
+});
+
 const isClosed = (assignment) => {
     if (!assignment || !assignment.closing_date) return false;
     const closingTime = new Date(assignment.closing_date).getTime();
@@ -43,10 +49,12 @@ const filteredAssignments = computed(() => {
         const dueDate = assignment.due_date ? new Date(assignment.due_date) : null;
         const isPastDue = dueDate && dueDate < now;
         const closed = isClosed(assignment); 
+        const needsGrading = assignment.ungraded_count > 0;
         
-        if (activeTab.value === 'upcoming') return !isPastDue && !closed;
-        if (activeTab.value === 'past') return isPastDue && !closed;
-        if (activeTab.value === 'completed') return closed; 
+        if (activeTab.value === 'needs_grading') return needsGrading;
+        if (activeTab.value === 'upcoming') return !isPastDue && !closed && !needsGrading;
+        if (activeTab.value === 'past') return isPastDue && !closed && !needsGrading;
+        if (activeTab.value === 'completed') return closed && !needsGrading; 
         return true;
     });
 
@@ -63,8 +71,15 @@ const filteredAssignments = computed(() => {
 <template>
     <Head title="Assignments" />
     <AuthenticatedLayout>
+        
+        <!-- MOBILE FLOATING FAB (Extracted to Root so it never gets blocked) -->
+        <Link v-if="selectedCourseId" :href="route('teacher.assignments.create', { course: selectedCourseId, source: 'global' })" class="md:hidden fixed bottom-[156px] right-4 z-[9999] flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-blue-600 hover:text-white hover:bg-blue-600 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.15)] active:scale-95 cursor-pointer">
+            <Plus class="w-6 h-6" />
+        </Link>
+
         <div class="h-full md:h-[calc(100vh-80px)] flex flex-col max-w-screen-2xl mx-auto -mt-2">
             
+            <!-- Header -->
             <div class="mb-2 md:mb-3 shrink-0 px-2 sm:px-0 flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-2 md:pb-3">
                 <div>
                     <h1 class="text-lg sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5 sm:gap-2">
@@ -73,38 +88,26 @@ const filteredAssignments = computed(() => {
                     </h1>
                     <p class="hidden sm:block text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5 ml-8">Manage tasks across your classes</p>
                 </div>
-                
-                <!-- Desktop Action Buttons -->
-                <div class="hidden md:flex gap-3">
-                    <Link v-if="selectedCourseId" :href="route('teacher.assignments.create', { course: selectedCourseId, source: 'global' })" class="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-sm transition">
-                        <Plus class="w-4 h-4" /> Create Task
-                    </Link>
-                </div>
             </div>
 
             <!-- Mobile Class Selector Dropdown -->
             <div class="md:hidden w-full px-2 mb-2 z-20">
                 <select @change="handleCourseDropdownSelect" class="w-full text-xs font-bold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer truncate">
                     <option v-for="course in courses" :key="course.id" :value="course.id" :selected="course.id === selectedCourseId">
-                        {{ course.title }} ({{ countUpcoming(course.assignments) }} Active)
+                        {{ course.title }} ({{ course.ungraded_count }} To Grade)
                     </option>
                 </select>
             </div>
 
             <div class="flex-1 flex flex-col md:flex-row gap-0 md:gap-4 overflow-hidden bg-slate-50/30 md:bg-transparent rounded-none md:rounded-lg relative">
                 
-                <!-- Desktop Floating FAB (Left) -->
-                <aside class="hidden md:flex flex-col w-12 shrink-0 gap-3 pt-1 z-10">
-                    <Link v-if="selectedCourseId" :href="route('teacher.assignments.create', { course: selectedCourseId, source: 'global' })" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-blue-600 hover:text-white hover:bg-blue-600 hover:border-blue-600 transition-all shadow-sm hover:shadow-md focus:outline-none">
+                <!-- DESKTOP FLOATING FAB (Left Side, Extracted safely) -->
+                <div class="hidden md:flex flex-col w-12 shrink-0 gap-3 pt-1 z-10">
+                    <Link v-if="selectedCourseId" :href="route('teacher.assignments.create', { course: selectedCourseId, source: 'global' })" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-blue-600 hover:text-white hover:bg-blue-600 transition-all shadow-sm hover:shadow-md focus:outline-none active:scale-95 cursor-pointer">
                         <Plus class="w-5 h-5" />
-                        <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg z-50">Create Task</span>
+                        <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg z-[9999]">Create Task</span>
                     </Link>
-                </aside>
-
-                <!-- Mobile Floating FAB (Bottom Right - Icon only, above chat widget) -->
-                <Link v-if="selectedCourseId" :href="route('teacher.assignments.create', { course: selectedCourseId, source: 'global' })" class="md:hidden fixed bottom-[156px] right-4 z-[45] flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-blue-600 hover:text-white hover:bg-blue-600 hover:border-blue-600 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:shadow-xl focus:outline-none shrink-0">
-                    <Plus class="w-5 h-5" />
-                </Link>
+                </div>
 
                 <!-- Desktop Sidebar Class List -->
                 <aside class="hidden md:flex w-56 lg:w-64 bg-slate-50/50 md:bg-white dark:bg-slate-900 md:dark:bg-slate-800 flex-col shrink-0 md:border border-slate-200 dark:border-slate-700 md:rounded-lg overflow-hidden md:h-full shadow-sm">
@@ -122,7 +125,7 @@ const filteredAssignments = computed(() => {
                                 : 'bg-transparent border-transparent hover:bg-slate-100 dark:hover:bg-slate-700/50'"
                         >
                             <div class="flex items-center gap-2.5 overflow-hidden w-full">
-                                <div class="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 overflow-hidden text-[10px] font-black uppercase">
+                                <div class="relative w-7 h-7 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 overflow-hidden text-[10px] font-black uppercase">
                                     <img v-if="course.thumbnail && !imageErrors[course.id]" 
                                          :src="course.thumbnail" 
                                          @error="handleImageError(course.id)"
@@ -138,9 +141,9 @@ const filteredAssignments = computed(() => {
                                         <span class="text-[9px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                                             {{ countUpcoming(course.assignments) }} active
                                         </span>
-                                        <span v-if="course.ungraded_count > 0" class="flex items-center gap-1 text-red-600 dark:text-red-400 text-[9px] font-black">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse"></span>
-                                            {{ course.ungraded_count }}
+                                        <span v-if="course.ungraded_count > 0" class="flex items-center gap-1 text-amber-600 dark:text-amber-400 text-[9px] font-black">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse shadow-[0_0_5px_rgba(217,119,6,0.8)]"></span>
+                                            {{ course.ungraded_count }} To Grade
                                         </span>
                                     </div>
                                 </div>
@@ -155,20 +158,31 @@ const filteredAssignments = computed(() => {
                     <div v-if="selectedCourse" class="flex flex-col h-full pt-0 md:pt-1">
                         
                         <div class="border-b border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 flex justify-between items-center px-1 sm:px-4">
-                            <div class="flex overflow-x-auto scrollbar-hide w-full sm:w-auto">
+                            <!-- Scrollable Tabs -->
+                            <div class="flex overflow-x-auto scrollbar-hide w-full sm:w-auto pb-1 sm:pb-0">
+                                <!-- NEEDS GRADING TAB -->
+                                <button @click="activeTab = 'needs_grading'"
+                                    class="px-2 sm:px-3 py-2 sm:py-3 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mr-1 sm:mr-6 transition-all border-b-2 whitespace-nowrap flex items-center gap-1.5 flex-1 sm:flex-none justify-center relative"
+                                    :class="activeTab === 'needs_grading' ? 'border-amber-500 text-amber-600 dark:text-amber-500' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'">
+                                    To Grade
+                                    <span v-if="totalNeedsGrading > 0" class="absolute top-1 sm:top-2 right-0 sm:right-1 w-2 h-2 bg-red-500 border-2 border-white dark:border-slate-800 rounded-full animate-pulse shadow-sm"></span>
+                                </button>
+                                
                                 <button @click="activeTab = 'upcoming'"
                                     class="px-2 sm:px-3 py-2 sm:py-3 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mr-1 sm:mr-6 transition-all border-b-2 whitespace-nowrap flex items-center gap-1 flex-1 sm:flex-none justify-center"
                                     :class="activeTab === 'upcoming' ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'">
                                     Upcoming
                                 </button>
+                                
                                 <button @click="activeTab = 'past'"
                                     class="px-2 sm:px-3 py-2 sm:py-3 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mr-1 sm:mr-6 transition-all border-b-2 whitespace-nowrap flex items-center gap-1 flex-1 sm:flex-none justify-center"
                                     :class="activeTab === 'past' ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'">
                                     Past Due
                                 </button>
+                                
                                 <button @click="activeTab = 'completed'"
                                     class="px-2 sm:px-3 py-2 sm:py-3 text-[9px] sm:text-[10px] font-black uppercase tracking-widest sm:mr-6 transition-all border-b-2 whitespace-nowrap flex items-center gap-1 flex-1 sm:flex-none justify-center"
-                                    :class="activeTab === 'completed' ? 'border-blue-600 text-blue-600 dark:text-blue-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'">
+                                    :class="activeTab === 'completed' ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'">
                                     Completed
                                 </button>
                             </div>
@@ -183,7 +197,7 @@ const filteredAssignments = computed(() => {
                         </div>
 
                         <!-- Mobile Sort Bar (Extremely thin) -->
-                        <div class="sm:hidden flex justify-end px-2 py-1.5 bg-slate-100/50 dark:bg-slate-900/30">
+                        <div class="sm:hidden flex justify-end px-2 py-1.5 bg-slate-100/50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700">
                              <select v-model="sortOrder" class="text-[8px] font-black uppercase tracking-widest text-slate-500 bg-transparent border-none focus:ring-0 cursor-pointer py-0 pl-1 pr-6 h-5">
                                 <option value="desc">Sort: Latest</option>
                                 <option value="asc">Sort: Oldest</option>
@@ -197,11 +211,20 @@ const filteredAssignments = computed(() => {
                                 <Link v-for="assignment in filteredAssignments" :key="assignment.id"
                                       :href="route('teacher.assignments.show', { assignment: assignment.id, source: 'global' })"
                                      class="group flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2.5 p-2 sm:p-4 bg-white dark:bg-slate-800 border-l-2 sm:border-l-4 border border-slate-200 dark:border-slate-700 rounded-md sm:rounded-xl transition-all duration-200 shadow-sm"
-                                     :class="activeTab === 'upcoming' ? 'border-l-blue-500 hover:border-blue-400' : activeTab === 'completed' ? 'border-l-emerald-500 hover:border-emerald-400' : 'border-l-red-500 hover:border-red-400'">
+                                     :class="[
+                                         activeTab === 'needs_grading' ? 'border-l-amber-500 hover:border-amber-400 bg-amber-50/10 dark:bg-amber-900/5' :
+                                         activeTab === 'upcoming' ? 'border-l-blue-500 hover:border-blue-400' : 
+                                         activeTab === 'completed' ? 'border-l-emerald-500 hover:border-emerald-400' : 'border-l-red-500 hover:border-red-400'
+                                     ]">
                                     
                                     <div class="hidden sm:flex shrink-0 w-8 h-8 rounded items-center justify-center transition-colors"
-                                         :class="activeTab === 'upcoming' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white' : activeTab === 'completed' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white'">
-                                        <ClipboardList class="w-4 h-4" />
+                                         :class="[
+                                             activeTab === 'needs_grading' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400 group-hover:bg-amber-500 group-hover:text-white' :
+                                             activeTab === 'upcoming' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white' : 
+                                             activeTab === 'completed' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-red-50 text-red-600 group-hover:bg-red-600 group-hover:text-white'
+                                         ]">
+                                        <AlertTriangle class="w-4 h-4" v-if="activeTab === 'needs_grading'" />
+                                        <ClipboardList class="w-4 h-4" v-else />
                                     </div>
 
                                     <div class="flex-1 min-w-0">
@@ -211,20 +234,31 @@ const filteredAssignments = computed(() => {
                                                     {{ assignment.type ? assignment.type.replace('_', ' ') : 'Task' }}
                                                 </span>
                                                 <h4 class="text-[10px] sm:text-sm font-black text-slate-900 dark:text-white truncate transition-colors"
-                                                    :class="activeTab === 'upcoming' ? 'group-hover:text-blue-600' : activeTab === 'completed' ? 'group-hover:text-emerald-600' : 'group-hover:text-red-600'">
+                                                    :class="[
+                                                        activeTab === 'needs_grading' ? 'group-hover:text-amber-600 dark:group-hover:text-amber-400' :
+                                                        activeTab === 'upcoming' ? 'group-hover:text-blue-600' : 
+                                                        activeTab === 'completed' ? 'group-hover:text-emerald-600' : 'group-hover:text-red-600'
+                                                    ]">
                                                     {{ assignment.title }}
                                                 </h4>
                                             </div>
-                                            <!-- Points Badge -->
-                                            <span class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-slate-100 dark:bg-slate-900/50 px-1.5 py-0.5 rounded shrink-0"
-                                                  :class="activeTab === 'upcoming' ? 'text-blue-600' : activeTab === 'completed' ? 'text-emerald-600' : 'text-red-600'">
-                                                {{ assignment.points }} pts
-                                            </span>
+                                            
+                                            <div class="flex gap-1.5 shrink-0">
+                                                <!-- "TO GRADE" BADGE -->
+                                                <span v-if="assignment.ungraded_count > 0" class="flex items-center gap-1 text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-1.5 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-800">
+                                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                                    {{ assignment.ungraded_count }} To Grade
+                                                </span>
+
+                                                <!-- Points Badge -->
+                                                <span class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-slate-100 dark:bg-slate-900/50 px-1.5 py-0.5 rounded text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                    {{ assignment.points }} pts
+                                                </span>
+                                            </div>
                                         </div>
 
-                                        <!-- Hidden description on mobile, clamped on desktop -->
                                         <p class="hidden sm:block text-[10px] text-slate-500 dark:text-slate-400 truncate font-medium leading-snug mt-0.5">
-                                            {{ assignment.description || 'No instructions.' }}
+                                            {{ assignment.description || 'No instructions provided.' }}
                                         </p>
                                     </div>
 
@@ -239,16 +273,24 @@ const filteredAssignments = computed(() => {
                                         <!-- Mobile Status/Action -->
                                         <div v-if="isClosed(assignment) && activeTab !== 'completed'" class="text-[7px] sm:text-[9px] font-black text-red-600 bg-red-50 dark:bg-red-900/20 px-1 py-0.5 rounded uppercase tracking-widest border border-red-100">Locked</div>
                                         <div v-else-if="activeTab === 'completed'" class="text-[7px] sm:text-[9px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1 py-0.5 rounded uppercase tracking-widest border border-emerald-100">Done</div>
+                                        
                                         <ChevronRight class="w-3 h-3 text-slate-300 transition-transform group-hover:translate-x-0.5 sm:hidden" />
                                         <ChevronRight class="w-4 h-4 text-slate-300 transition-transform group-hover:translate-x-0.5 hidden sm:block" />
                                     </div>
                                 </Link>
                             </div>
                             
-                            <div v-else class="flex flex-col items-center justify-center h-full py-12 px-4 text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 mt-2 sm:mt-0">
-                                <CheckCircle2 class="w-5 h-5 text-slate-300 dark:text-slate-600 mb-2" />
-                                <h3 class="text-[9px] sm:text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white mb-0.5">All caught up</h3>
-                                <p class="text-[8px] sm:text-[9px] font-bold text-center">No {{ activeTab }} assignments found.</p>
+                            <div v-else class="flex flex-col items-center justify-center h-full py-12 px-4 text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 mt-2 sm:mt-0 shadow-sm">
+                                <CheckCircle2 class="w-5 h-5 text-slate-300 dark:text-slate-600 mb-2" v-if="activeTab !== 'needs_grading'" />
+                                <div class="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-full flex items-center justify-center mb-2 border border-emerald-100 dark:border-emerald-900/30" v-else>
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                </div>
+                                <h3 class="text-[9px] sm:text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white mb-0.5">
+                                    {{ activeTab === 'needs_grading' ? "You're completely caught up!" : "All clear" }}
+                                </h3>
+                                <p class="text-[8px] sm:text-[9px] font-bold text-center">
+                                    {{ activeTab === 'needs_grading' ? 'No pending submissions left to grade.' : `No ${activeTab.replace('_', ' ')} assignments found.` }}
+                                </p>
                             </div>
                         </div>
                     </div>

@@ -34,6 +34,27 @@ class AssignmentController extends Controller
         ]);
     }
 
+    // --- NEW CREATE METHOD ADDED HERE ---
+    public function create(Request $request, Course $course)
+    {
+        // Security check: Only the course teacher or an admin can create assignments here
+        if ($course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') {
+            abort(403);
+        }
+
+        $source = $request->query('source', 'course');
+        $backUrl = $source === 'global' 
+            ? route('teacher.assignments.index') 
+            : route('teacher.courses.show', $course->id);
+
+        return Inertia::render('Teacher/AssignmentCreate', [
+            'course' => $course,
+            'source' => $source,
+            'backUrl' => $backUrl
+        ]);
+    }
+    // ------------------------------------
+
     public function store(Request $request, Course $course)
     {
         if ($course->teacher_id !== Auth::id()) abort(403);
@@ -129,6 +150,7 @@ class AssignmentController extends Controller
                     }
                 }
             }
+
             $filePaths = [];
             foreach ($request->file('files') as $file) {
                 $filePaths[] = $file->store('assignments', 'public');
@@ -137,13 +159,16 @@ class AssignmentController extends Controller
         }
 
         $assignment->update($data);
+
         return back()->with('success', 'Task updated successfully.');
     }
 
     public function destroy(Assignment $assignment)
     {
         if ($assignment->course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') abort(403);
+
         $assignment->delete();
+
         return redirect()->route('teacher.courses.show', $assignment->course_id)->with('success', 'Task deleted successfully.');
     }
 

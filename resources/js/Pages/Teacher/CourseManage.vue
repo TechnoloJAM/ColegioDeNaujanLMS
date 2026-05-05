@@ -110,9 +110,6 @@ const displayedMaterials = computed(() => {
     return archivedMaterials.value;
 });
 
-// --- UPDATED DESKTOP & MOBILE THUMBNAIL LOGIC ---
-
-// Helper: Extracts the 11 character ID so we can fetch the image
 const getYouTubeVideoId = (url) => {
     if (!url) return null;
     const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/)([^#&?]*).*/;
@@ -123,7 +120,6 @@ const getYouTubeVideoId = (url) => {
 const formatRichText = (htmlContent) => {
     if (!htmlContent) return '';
     
-    // Step A: Force existing iframes to be mobile-responsive (Desktop only)
     let processed = htmlContent.replace(/<iframe/gi, '<iframe class="hidden sm:block w-full max-w-[320px] sm:max-w-[400px] aspect-video rounded-lg shadow-sm my-3 border border-slate-200 dark:border-slate-700"');
 
     // Step B: Convert pasted YouTube links into a split Desktop/Mobile layout
@@ -149,7 +145,6 @@ const formatRichText = (htmlContent) => {
 
     return processed;
 };
-// --------------------------------
 
 const pendingStudents = computed(() => props.course.enrollments ? props.course.enrollments.filter(e => e.status === 'pending' && e.user) : []);
 const approvedStudentsRaw = computed(() => props.course.enrollments ? props.course.enrollments.filter(e => e.status === 'approved' && e.user) : []);
