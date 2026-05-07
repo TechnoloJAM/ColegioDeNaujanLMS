@@ -22,6 +22,10 @@ const sortBy = ref('newest');
 const isCreateModalOpen = ref(false);
 const selectedIds = ref([]);
 
+// User Details Card State
+const isUserDetailsModalOpen = ref(false);
+const selectedUserDetails = ref(null);
+
 // Security Modals States
 const isRoleModalOpen = ref(false);
 const isResetPasswordModalOpen = ref(false);
@@ -41,16 +45,29 @@ const selectedUserForRole = ref(null);
 const selectedUserForPassword = ref(null);
 const selectedUserForImpersonate = ref(null);
 
-// --- DYNAMIC FILTER OPTIONS ---
+// --- 1. DYNAMIC BASE TAB FILTERING ---
+// First, isolate the users that belong ONLY to the currently selected tab
+const baseTabUsers = computed(() => {
+    return props.users.filter(user => {
+        if (activeTab.value === 'archive') {
+            return user.status === 'suspended' && user.role === archiveSubTab.value;
+        } else {
+            return user.status === 'active' && user.role === activeTab.value;
+        }
+    });
+});
+
+// --- 2. DYNAMIC FILTER OPTIONS ---
+// Scan ONLY the baseTabUsers to populate the dropdown options dynamically
 const availablePrograms = computed(() => {
     const progs = new Set();
-    props.users.forEach(u => { if (u.program) progs.add(u.program); });
+    baseTabUsers.value.forEach(u => { if (u.program) progs.add(u.program); });
     return Array.from(progs).sort();
 });
 
 const availableYears = computed(() => {
     const yrs = new Set();
-    props.users.forEach(u => {
+    baseTabUsers.value.forEach(u => {
         if (u.school_id && u.school_id.includes('-')) {
             yrs.add(u.school_id.split('-')[0]);
         }
@@ -58,45 +75,37 @@ const availableYears = computed(() => {
     return Array.from(yrs).sort((a, b) => b - a); // Sort newest year first
 });
 
-// --- CORE FILTERING LOGIC ---
+// --- 3. FINAL FILTERING LOGIC ---
+// Apply search, specific filters, and sorting to the isolated tab users
 const filteredUsers = computed(() => {
-    let result = props.users.filter(user => {
-        // 1. Tab & Status Matching
-        let tabMatch = false;
-        if (activeTab.value === 'archive') {
-            tabMatch = user.status === 'suspended' && user.role === archiveSubTab.value;
-        } else {
-            tabMatch = user.status === 'active' && user.role === activeTab.value;
-        }
-        if (!tabMatch) return false;
-
-        // 2. Search Query
+    let result = baseTabUsers.value.filter(user => {
+        
+        // Search Query
         const q = searchQuery.value.toLowerCase();
-        const searchMatch = !q || 
-            user.name.toLowerCase().includes(q) || 
-            user.email.toLowerCase().includes(q) || 
-            (user.school_id && user.school_id.toLowerCase().includes(q));
-        if (!searchMatch) return false;
+        if (q) {
+            const searchMatch = user.name.toLowerCase().includes(q) || 
+                                user.email.toLowerCase().includes(q) || 
+                                (user.school_id && user.school_id.toLowerCase().includes(q));
+            if (!searchMatch) return false;
+        }
 
-        // 3. Program Filter
+        // Program Filter
         if (filterProgram.value !== 'all' && user.program !== filterProgram.value) return false;
 
-        // 4. Year Filter (Extracts year from YYYY-XXXXX)
+        // Year Filter
         if (filterYear.value !== 'all' && (!user.school_id || !user.school_id.startsWith(filterYear.value + '-'))) return false;
 
         return true;
     });
 
-    // 5. Sorting Logic
-    result.sort((a, b) => {
-        if (sortBy.value === 'newest') return new Date(b.created_at) - new Date(a.created_at);
-        if (sortBy.value === 'oldest') return new Date(a.created_at) - new Date(b.created_at);
+    // Sorting Logic
+    return result.sort((a, b) => {
+        if (sortBy.value === 'newest') return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        if (sortBy.value === 'oldest') return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
         if (sortBy.value === 'name_asc') return a.name.localeCompare(b.name);
         if (sortBy.value === 'name_desc') return b.name.localeCompare(a.name);
         return 0;
     });
-
-    return result;
 });
 
 // Reset selection and sub-filters when changing main tabs
@@ -121,6 +130,12 @@ const isAllSelected = computed(() => {
 const toggleAll = () => {
     if (isAllSelected.value) selectedIds.value = [];
     else selectedIds.value = filteredUsers.value.map(u => u.id);
+};
+
+// --- OPEN USER PROFILE CARD ---
+const openUserDetails = (user) => {
+    selectedUserDetails.value = user;
+    isUserDetailsModalOpen.value = true;
 };
 
 // --- GENERATORS ---
@@ -201,22 +216,19 @@ const submitResetPassword = () => { resetPasswordForm.patch(route('admin.users.r
 const exportToCSV = () => {
     const lines = [];
     
-    // 1. Formal Metadata Header
     lines.push(`"COLEGIO DE NAUJAN - LMS SYSTEM REPORT"`);
     lines.push(`"Report Generated:","${new Date().toLocaleString()}"`);
     lines.push(`"List Category:","${activeTab.value.toUpperCase()}"`);
     lines.push(`"Total Records:","${filteredUsers.value.length}"`);
-    lines.push(""); // Empty Spacer
+    lines.push(""); 
     
-    // 2. Column Headers
     const headers = ['School ID', 'Full Name', 'Email Address', 'Program/Department', 'System Role', 'Status', 'Date Registered'];
     lines.push(headers.map(h => `"${h}"`).join(','));
 
-    // 3. Data Formatting
     filteredUsers.value.forEach(user => {
         const row = [
             user.school_id || 'N/A',
-            user.name.replace(/"/g, '""'), // Escape quotes for safety
+            user.name.replace(/"/g, '""'), 
             user.email,
             user.program || 'N/A',
             user.role.toUpperCase(),
@@ -251,7 +263,6 @@ const subTabs = [
 ];
 
 const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent py-1.5 px-3 text-xs shadow-sm transition-colors duration-200";
-const filterClass = "h-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold uppercase tracking-wider focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm cursor-pointer px-2 transition-colors";
 </script>
 
 <template>
@@ -283,7 +294,8 @@ const filterClass = "h-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-
 
             <div class="flex-1 min-w-0 w-full order-1 md:order-2">
                 
-                <div class="bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm mb-4 flex flex-col xl:flex-row gap-2.5 items-stretch xl:items-center">
+                <div class="bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm mb-4 flex flex-col lg:flex-row gap-2.5 items-stretch lg:items-center">
+                    
                     <div class="relative flex-1 min-w-[200px]">
                         <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
                             <svg class="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
@@ -291,23 +303,36 @@ const filterClass = "h-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-
                         <input v-model="searchQuery" type="text" placeholder="Search by name, email, or ID..." class="w-full h-8 pl-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs shadow-sm transition-colors" />
                     </div>
 
-                    <div class="flex flex-wrap sm:flex-nowrap gap-2">
-                        <select v-if="activeTab === 'student' || archiveSubTab === 'student'" v-model="filterProgram" :class="filterClass" class="flex-1 sm:w-auto min-w-[120px]">
-                            <option value="all">All Programs</option>
-                            <option v-for="prog in availablePrograms" :key="prog" :value="prog">{{ prog }}</option>
-                        </select>
+                    <!-- DYNAMIC FILTER GRID: Snaps into a beautiful grid on mobile -->
+                    <div class="grid grid-cols-2 sm:flex sm:flex-row gap-2 w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
                         
-                        <select v-model="filterYear" :class="filterClass" class="flex-1 sm:w-auto min-w-[100px]">
-                            <option value="all">All Years</option>
-                            <option v-for="year in availableYears" :key="year" :value="year">{{ year }} Batches</option>
-                        </select>
+                        <!-- Program Filter dynamically shows ONLY if the active tab has programs available -->
+                        <div v-if="availablePrograms.length > 0" class="col-span-2 sm:col-span-1 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[140px]">
+                            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                            <select v-model="filterProgram" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
+                                <option value="all">All Programs</option>
+                                <option v-for="prog in availablePrograms" :key="prog" :value="prog">{{ prog }}</option>
+                            </select>
+                        </div>
                         
-                        <select v-model="sortBy" :class="filterClass" class="flex-1 sm:w-auto min-w-[130px]">
-                            <option value="newest">Newest First</option>
-                            <option value="oldest">Oldest First</option>
-                            <option value="name_asc">Name (A-Z)</option>
-                            <option value="name_desc">Name (Z-A)</option>
-                        </select>
+                        <!-- Year Filter dynamically shows ONLY if the active tab has users with year IDs -->
+                        <div v-if="availableYears.length > 0" class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[120px]">
+                            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            <select v-model="filterYear" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
+                                <option value="all">All Years</option>
+                                <option v-for="year in availableYears" :key="year" :value="year">{{ year }} Batches</option>
+                            </select>
+                        </div>
+                        
+                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[130px]" :class="{'col-span-2': availablePrograms.length === 0 && availableYears.length === 0}">
+                            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
+                            <select v-model="sortBy" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                                <option value="name_asc">Name (A-Z)</option>
+                                <option value="name_desc">Name (Z-A)</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -341,6 +366,11 @@ const filterClass = "h-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-
                     </div>
                 </transition>
 
+                <div class="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-2 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Tip: Double-click any user row to view their full profile card.
+                </div>
+
                 <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-8">
                     <div class="overflow-x-auto no-scrollbar">
                         <table class="w-full text-left text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
@@ -355,13 +385,13 @@ const filterClass = "h-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
-                                <tr v-for="user in filteredUsers" :key="user.id" class="transition" :class="selectedIds.includes(user.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'">
+                                <tr v-for="user in filteredUsers" :key="user.id" @dblclick="openUserDetails(user)" class="transition select-none cursor-pointer" :class="selectedIds.includes(user.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'" title="Double-click to view full profile">
                                     
-                                    <td class="px-3 py-1.5">
+                                    <td class="px-3 py-1.5" @dblclick.stop>
                                         <input type="checkbox" :checked="selectedIds.includes(user.id)" @change="toggleSelection(user.id)" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm" />
                                     </td>
 
-                                    <td class="px-2 py-1.5 flex flex-col sm:table-cell cursor-pointer" @click="toggleSelection(user.id)">
+                                    <td class="px-2 py-1.5 flex flex-col sm:table-cell">
                                         <div class="font-bold text-slate-900 dark:text-white truncate max-w-[150px] sm:max-w-xs leading-tight">{{ user.name }}</div>
                                         <div class="text-[10px] mt-0.5 truncate max-w-[150px] sm:max-w-xs leading-tight opacity-80">{{ user.email }}</div>
                                         
@@ -386,7 +416,7 @@ const filterClass = "h-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-
                                         </span>
                                     </td>
                                     
-                                    <td class="px-2 py-1.5 text-right align-middle">
+                                    <td class="px-2 py-1.5 text-right align-middle" @dblclick.stop>
                                         <div class="flex items-center justify-end gap-1 flex-wrap sm:flex-nowrap min-w-[80px]">
                                             
                                             <button @click="openResetPasswordModal(user)" class="p-1.5 text-indigo-400 hover:text-indigo-600 bg-white hover:bg-indigo-50 dark:bg-transparent dark:hover:bg-indigo-900/30 rounded transition shadow-sm border border-transparent hover:border-indigo-200 dark:hover:border-indigo-800" title="Reset Password">
@@ -429,6 +459,61 @@ const filterClass = "h-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-
 
             </div>
         </div>
+
+        <!-- USER DETAILS CARD MODAL -->
+        <Modal :show="isUserDetailsModalOpen" @close="isUserDetailsModalOpen = false" maxWidth="sm">
+            <div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div class="h-16 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+                
+                <button @click="isUserDetailsModalOpen = false" class="absolute top-2 right-2 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 rounded-full p-1.5 transition z-10">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+
+                <div class="absolute top-8 left-1/2 -translate-x-1/2">
+                    <div class="w-16 h-16 rounded-full border-4 border-white dark:border-slate-800 bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden shadow-sm">
+                        <img v-if="selectedUserDetails?.avatar" :src="selectedUserDetails.avatar" referrerpolicy="no-referrer" class="w-full h-full object-cover" />
+                        <span v-else class="text-xl font-black text-slate-500 dark:text-slate-400 uppercase">{{ selectedUserDetails?.name?.charAt(0) }}</span>
+                    </div>
+                </div>
+
+                <div class="pt-12 pb-5 px-5">
+                    <div class="text-center mb-5">
+                        <h3 class="text-base font-black text-slate-900 dark:text-white leading-tight">{{ selectedUserDetails?.name }}</h3>
+                        <p class="text-[10px] font-bold text-slate-500 mt-0.5">{{ selectedUserDetails?.email }}</p>
+                        <div class="flex items-center justify-center gap-1.5 mt-2.5">
+                            <span class="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">{{ selectedUserDetails?.role }}</span>
+                            <span :class="selectedUserDetails?.status === 'suspended' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'" class="px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest">
+                                {{ selectedUserDetails?.status }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-700/50 p-3 space-y-2.5">
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-2">
+                            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">School ID</span>
+                            <span class="text-[10px] font-black text-slate-800 dark:text-slate-200 font-mono">{{ selectedUserDetails?.school_id || 'N/A' }}</span>
+                        </div>
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-2">
+                            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">Program / Dept</span>
+                            <span class="text-[10px] font-black text-slate-800 dark:text-slate-200 text-right max-w-[60%] truncate">{{ selectedUserDetails?.program || 'N/A' }}</span>
+                        </div>
+                        <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-2">
+                            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">Contact No.</span>
+                            <span class="text-[10px] font-black text-slate-800 dark:text-slate-200">{{ selectedUserDetails?.contact_number || 'N/A' }}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">Joined Date</span>
+                            <span class="text-[10px] font-black text-slate-800 dark:text-slate-200">{{ selectedUserDetails ? new Date(selectedUserDetails.created_at).toLocaleDateString() : '' }}</span>
+                        </div>
+                    </div>
+                    
+                    <div v-if="selectedUserDetails?.status === 'suspended'" class="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 rounded-lg text-center">
+                        <span class="text-[9px] font-black uppercase text-red-600 tracking-widest block mb-1">Suspension Reason</span>
+                        <span class="text-xs font-medium text-red-700 dark:text-red-400 leading-snug">{{ selectedUserDetails?.suspension_reason }}</span>
+                    </div>
+                </div>
+            </div>
+        </Modal>
 
         <Modal :show="isCreateModalOpen" :closeable="false" @close="isCreateModalOpen = false">
             <div class="p-5 bg-white dark:bg-slate-800 rounded-lg">

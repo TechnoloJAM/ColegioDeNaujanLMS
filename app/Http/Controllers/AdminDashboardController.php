@@ -18,8 +18,6 @@ class AdminDashboardController extends Controller
 {
     public function index(Request $request)
     {
-        $range = $request->query('range', '6_months');
-
         $stats = [
             'totalUsers' => User::count(),
             'activeUsers' => User::where('status', 'active')->count(),
@@ -33,34 +31,44 @@ class AdminDashboardController extends Controller
             'pendingEnrollments' => Enrollment::where('status', 'pending')->count(),
         ];
 
-        // 2. Dynamic Line Chart Data
-        $labels = [];
-        $data = [];
+        // DYNAMIC MONTH-BY-MONTH CALENDAR CHART
+        $month = $request->query('month', now()->month);
+        $year = $request->query('year', now()->year);
+        $date = Carbon::createFromDate($year, $month, 1);
+        $daysInMonth = $date->daysInMonth;
 
-        if ($range === '7_days') {
-            for ($i = 6; $i >= 0; $i--) {
-                $labels[] = now()->subDays($i)->format('M d');
-                $data[] = Enrollment::whereDate('created_at', now()->subDays($i))->count();
-            }
-        } elseif ($range === '30_days') {
-            for ($i = 29; $i >= 0; $i--) {
-                $labels[] = now()->subDays($i)->format('M d');
-                $data[] = Enrollment::whereDate('created_at', now()->subDays($i))->count();
-            }
-        } elseif ($range === 'year') {
-            for ($i = 11; $i >= 0; $i--) {
-                $labels[] = now()->subMonths($i)->format('M Y');
-                $data[] = Enrollment::whereYear('created_at', now()->subMonths($i)->year)
-                                    ->whereMonth('created_at', now()->subMonths($i)->month)
-                                    ->count();
-            }
-        } else { // default 6_months
-            for ($i = 5; $i >= 0; $i--) {
-                $labels[] = now()->subMonths($i)->format('M Y');
-                $data[] = Enrollment::whereYear('created_at', now()->subMonths($i)->year)
-                                    ->whereMonth('created_at', now()->subMonths($i)->month)
-                                    ->count();
-            }
+        // Grouping for Users created IN this specific month (DAILY METRICS)
+        $usersDaily = User::whereYear('created_at', $year)
+            ->whereMonth('created_at', $month)
+            ->get()
+            ->groupBy(fn($val) => Carbon::parse($val->created_at)->format('j'));
+
+        // Grouping for New Daily Enrollments
+        $enrollsDaily = Enrollment::whereYear('created_at', $year)
+            ->whereMonth('created_at', $month)
+            ->get()
+            ->groupBy(fn($val) => Carbon::parse($val->created_at)->format('j'))
+            ->map(fn($row) => $row->count());
+
+        $labels = [];
+        $totalData = [];
+        $activeData = [];
+        $suspendedData = [];
+        $enrollmentsData = [];
+
+        for ($i = 1; $i <= $daysInMonth; $i++) {
+            $labels[] = $date->format('M') . ' ' . $i;
+            
+            // Extract the specific day's users
+            $dailyUsers = $usersDaily->get($i, collect());
+            
+            // Push DAILY new accounts to graph (Creates dynamic spikes)
+            $totalData[] = $dailyUsers->count();
+            $activeData[] = $dailyUsers->where('status', 'active')->count();
+            $suspendedData[] = $dailyUsers->where('status', 'suspended')->count();
+            
+            // Push daily enrollments
+            $enrollmentsData[] = $enrollsDaily->get($i, 0);
         }
 
         return Inertia::render('Admin/Dashboard', [
@@ -69,11 +77,16 @@ class AdminDashboardController extends Controller
                 'labels' => ['Students', 'Teachers', 'Admins'],
                 'data' => [$stats['students'], $stats['teachers'], User::where('role', 'admin')->count()]
             ],
-            'enrollmentTrend' => [
+            'chartData' => [
                 'labels' => $labels,
-                'data' => $data
+                'total' => $totalData,
+                'active' => $activeData,
+                'suspended' => $suspendedData,
+                'enrollments' => $enrollmentsData,
             ],
-            'currentRange' => $range,
+            'currentMonth' => (int) $month,
+            'currentYear' => (int) $year,
+            'monthName' => $date->format('F Y'),
             'recentCourses' => Course::with('teacher')->latest()->take(5)->get()
         ]);
     }
@@ -82,7 +95,7 @@ class AdminDashboardController extends Controller
     {
         return Inertia::render('Admin/UserManagement', [
             'users' => User::with('enrolledCourses:id,title')
-                ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at')
+                ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at', 'contact_number', 'avatar')
                 ->orderBy('name')
                 ->get(),
             'courses' => \App\Models\Course::select('id', 'title')->orderBy('title')->get()
@@ -98,6 +111,7 @@ class AdminDashboardController extends Controller
             'school_id' => 'nullable|string|max:50',
             'program' => 'nullable|string|max:100',
             'contact_number' => 'nullable|string|max:20',
+            'avatar' => 'nullable|string|max:255',
             'password' => ['required', Rules\Password::defaults()],
         ]);
 
@@ -336,8 +350,6 @@ class AdminDashboardController extends Controller
         $newValue = $setting->value === 'true' ? 'false' : 'true';
         $setting->update(['value' => $newValue]);
         
-        // FIX #4: Approval Limbo Rescue
-        // If the admin turns off approval, auto-approve any trapped pending materials.
         if ($newValue === 'false') {
             Lesson::where('approval_status', 'pending')->update(['approval_status' => 'approved']);
         }

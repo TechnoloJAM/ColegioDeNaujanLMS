@@ -2,7 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
-import axios from 'axios'; // ADDED for frontend bulk looping
+import axios from 'axios';
 import Modal from '@/Components/Modal.vue';
 import InputError from '@/Components/InputError.vue';
 
@@ -13,24 +13,42 @@ const props = defineProps({
 
 const activeTab = ref('pending');
 const selectedIds = ref([]);
-const isProcessingBulk = ref(false); // ADDED: Protection during bulk loops
+const isProcessingBulk = ref(false); 
 
 const showMaterialPreview = ref(false);
 const selectedMaterialPath = ref(null);
+
+const sortOrder = ref('desc');
+const selectedCourseFilter = ref('all');
+const showCourseDropdown = ref(false);
 
 const openMaterialPreview = (path) => {
     selectedMaterialPath.value = path;
     showMaterialPreview.value = true;
 };
 
-const selectedCourseFilter = ref('all');
+const setCourseFilter = (id) => {
+    selectedCourseFilter.value = id;
+    showCourseDropdown.value = false;
+};
 
 const availableCourses = computed(() => {
     const courses = {};
     props.materials.forEach(m => {
-        if (m.course) courses[m.course.id] = m.course.title;
+        if (m.course) {
+            if (!courses[m.course.id]) {
+                courses[m.course.id] = { title: m.course.title, pendingCount: 0 };
+            }
+            if (m.approval_status === 'pending') {
+                courses[m.course.id].pendingCount++;
+            }
+        }
     });
-    return Object.entries(courses).map(([id, title]) => ({ id: Number(id), title }));
+    return Object.entries(courses).map(([id, data]) => ({ 
+        id: Number(id), 
+        title: data.title,
+        pendingCount: data.pendingCount
+    }));
 });
 
 const showEditModal = ref(false);
@@ -103,27 +121,37 @@ const submitUnarchive = () => {
     });
 };
 
-const pendingMaterials = computed(() => props.materials.filter(m => m.approval_status === 'pending'));
-const rejectedMaterials = computed(() => props.materials.filter(m => m.approval_status === 'rejected'));
+const baseFilteredMaterials = computed(() => {
+    if (selectedCourseFilter.value === 'all') {
+        return props.materials;
+    }
+    return props.materials.filter(m => m.course_id === selectedCourseFilter.value);
+});
+
+const pendingMaterials = computed(() => baseFilteredMaterials.value.filter(m => m.approval_status === 'pending'));
+const rejectedMaterials = computed(() => baseFilteredMaterials.value.filter(m => m.approval_status === 'rejected'));
 const approvedMaterials = computed(() => {
     const now = new Date();
-    return props.materials.filter(m => m.approval_status === 'approved' && (!m.available_until || new Date(m.available_until) > now));
+    return baseFilteredMaterials.value.filter(m => m.approval_status === 'approved' && (!m.available_until || new Date(m.available_until) > now));
 });
 const archivedMaterials = computed(() => {
     const now = new Date();
-    return props.materials.filter(m => m.approval_status === 'approved' && m.available_until && new Date(m.available_until) <= now);
+    return baseFilteredMaterials.value.filter(m => m.approval_status === 'approved' && m.available_until && new Date(m.available_until) <= now);
 });
 
 const displayedMaterials = computed(() => {
-    let filtered = activeTab.value === 'pending' ? pendingMaterials.value :
-                   activeTab.value === 'approved' ? approvedMaterials.value :
-                   activeTab.value === 'rejected' ? rejectedMaterials.value :
-                   archivedMaterials.value;
+    let activeList = [];
+    
+    if (activeTab.value === 'pending') activeList = pendingMaterials.value;
+    else if (activeTab.value === 'approved') activeList = approvedMaterials.value;
+    else if (activeTab.value === 'rejected') activeList = rejectedMaterials.value;
+    else if (activeTab.value === 'archived') activeList = archivedMaterials.value;
 
-    if (selectedCourseFilter.value !== 'all') {
-        filtered = filtered.filter(m => m.course_id === selectedCourseFilter.value);
-    }
-    return filtered;
+    return [...activeList].sort((a, b) => {
+        const dateA = new Date(a.created_at || 0).getTime();
+        const dateB = new Date(b.created_at || 0).getTime();
+        return sortOrder.value === 'desc' ? dateB - dateA : dateA - dateB;
+    });
 });
 
 const groupedMaterials = computed(() => {
@@ -138,10 +166,9 @@ const groupedMaterials = computed(() => {
     return groups;
 });
 
-// Clear selections when switching tabs
 watch(activeTab, () => { selectedIds.value = []; });
+watch(selectedCourseFilter, () => { selectedIds.value = []; });
 
-// --- RESTORED CHECKBOX LOGIC FOR ALL TABS ---
 const toggleSelection = (id) => {
     if (selectedIds.value.includes(id)) selectedIds.value = selectedIds.value.filter(i => i !== id);
     else selectedIds.value.push(id);
@@ -160,7 +187,6 @@ const toggleAll = () => {
     }
 };
 
-// --- DYNAMIC FRONTEND BULK ACTIONS (Looping for endpoints without bulk support) ---
 const bulkAction = async (action, method = 'patch') => {
     if (!confirm(`Are you sure you want to ${action} ${selectedIds.value.length} selected item(s)?`)) return;
     
@@ -173,7 +199,6 @@ const bulkAction = async (action, method = 'patch') => {
                 await axios[method](route(`admin.lessons.${action}`, id));
             }
         }
-        // Force an inertia reload to refresh the table data from the server
         router.reload({ only: ['materials'], onSuccess: () => selectedIds.value = [] });
     } catch (e) {
         console.error(e);
@@ -217,54 +242,100 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
     <Head title="Material Approval" />
 
     <AuthenticatedLayout>
-        <div class="mb-4 flex flex-col md:flex-row md:items-end justify-between gap-3">
+        <div class="mb-3 flex flex-col md:flex-row md:items-end justify-between gap-2">
             <div>
-                <h1 class="text-xl font-black text-slate-900 dark:text-white tracking-tight">Material Approval</h1>
-                <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Manage Course Uploads</p>
+                <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">Material Approval</h1>
+                <p class="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Manage Course Uploads</p>
             </div>
             
             <div class="flex items-center gap-3">
-                <div class="bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2">
+                <div class="bg-white dark:bg-slate-800 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2">
                     <div class="flex flex-col text-right">
-                        <span class="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 leading-none">Require Approval</span>
-                        <span class="text-[8px] font-bold text-slate-400 uppercase mt-0.5">{{ requireApproval ? 'Active' : 'Auto-Approve' }}</span>
+                        <span class="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 leading-none">Require Approval</span>
+                        <span class="text-[7px] sm:text-[8px] font-bold text-slate-400 uppercase mt-0.5">{{ requireApproval ? 'Active' : 'Auto-Approve' }}</span>
                     </div>
-                    <button @click="openToggleConfirm" :class="requireApproval ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'" class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner">
-                        <span :class="requireApproval ? 'translate-x-4' : 'translate-x-0'" class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+                    <button @click="openToggleConfirm" :class="requireApproval ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'" class="relative inline-flex h-4 w-8 sm:h-5 sm:w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none shadow-inner">
+                        <span :class="requireApproval ? 'translate-x-4' : 'translate-x-0'" class="pointer-events-none inline-block h-3 w-3 sm:h-4 sm:w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                     </button>
                 </div>
             </div>
         </div>
 
-        <div class="max-w-6xl space-y-4">
+        <div class="max-w-6xl space-y-3">
             
-            <div class="flex flex-col sm:flex-row gap-2">
+            <div class="flex flex-col lg:flex-row gap-2">
+                <!-- TABS (Overflow auto enabled here) -->
                 <div class="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg gap-1 overflow-x-auto shadow-sm border border-slate-200 dark:border-slate-700 flex-1 scrollbar-hide">
                     <button @click="activeTab = 'pending'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'pending' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
                         Pending <span v-if="pendingMaterials.length" class="bg-orange-100 text-orange-600 px-1 rounded text-[8px]">{{ pendingMaterials.length }}</span>
                     </button>
-                    <button @click="activeTab = 'approved'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all" :class="activeTab === 'approved' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                        Approved
+                    <button @click="activeTab = 'approved'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'approved' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                        Approved <span v-if="approvedMaterials.length" class="bg-emerald-100 text-emerald-600 px-1 rounded text-[8px]">{{ approvedMaterials.length }}</span>
                     </button>
                     <button @click="activeTab = 'rejected'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'rejected' ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
                         Rejected <span v-if="rejectedMaterials.length" class="bg-red-100 text-red-600 px-1 rounded text-[8px]">{{ rejectedMaterials.length }}</span>
                     </button>
-                    <button @click="activeTab = 'archived'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all" :class="activeTab === 'archived' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                        Archived
+                    <button @click="activeTab = 'archived'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'archived' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                        Archived <span v-if="archivedMaterials.length" class="bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-1 rounded text-[8px]">{{ archivedMaterials.length }}</span>
                     </button>
                 </div>
 
-                <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[160px] w-full sm:w-auto">
-                    <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
-                    <select v-model="selectedCourseFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
-                        <option value="all">All Courses</option>
-                        <option v-for="c in availableCourses" :key="c.id" :value="c.id">{{ c.title }}</option>
-                    </select>
+                <!-- FILTERS (Flex-wrap instead of overflow hidden to prevent cutoff dropdowns) -->
+                <div class="flex gap-2 w-full lg:w-auto flex-wrap sm:flex-nowrap relative z-50">
+                    
+                    <!-- CUSTOM COURSE FILTER DROPDOWN -->
+                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[140px] flex-1 sm:flex-none relative cursor-pointer select-none" @click="showCourseDropdown = !showCourseDropdown">
+                        
+                        <!-- Notification dot indicating dropdown has pending items -->
+                        <span v-if="pendingMaterials.length > 0 && selectedCourseFilter === 'all'" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm border border-white dark:border-slate-800"></span>
+                        <span v-else-if="selectedCourseFilter !== 'all' && availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount > 0" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm border border-white dark:border-slate-800"></span>
+                        
+                        <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
+                        
+                        <div class="text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full flex justify-between items-center py-0.5">
+                            <span class="truncate pr-1">
+                                {{ selectedCourseFilter === 'all' ? 'All Courses' : availableCourses.find(c => c.id === selectedCourseFilter)?.title }}
+                            </span>
+                            <!-- Active selection badge -->
+                            <span v-if="selectedCourseFilter !== 'all' && availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount > 0" class="bg-red-500 text-white px-1 py-0.5 rounded text-[7px] shadow-sm shrink-0">
+                                {{ availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount }}
+                            </span>
+                            <span v-else-if="selectedCourseFilter === 'all' && props.materials.filter(m => m.approval_status === 'pending').length > 0" class="bg-red-500 text-white px-1 py-0.5 rounded text-[7px] shadow-sm shrink-0">
+                                {{ props.materials.filter(m => m.approval_status === 'pending').length }}
+                            </span>
+                        </div>
+
+                        <!-- Invisible backdrop to close dropdown when clicking outside -->
+                        <div v-if="showCourseDropdown" @click.stop="showCourseDropdown = false" class="fixed inset-0 z-40"></div>
+
+                        <!-- Custom Dropdown Options -->
+                        <transition enter-active-class="transition ease-out duration-100" enter-from-class="opacity-0 scale-95" enter-to-class="opacity-100 scale-100" leave-active-class="transition ease-in duration-75" leave-from-class="opacity-100 scale-100" leave-to-class="opacity-0 scale-95">
+                            <div v-if="showCourseDropdown" class="absolute top-full left-0 mt-1 w-full sm:w-60 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-[60] py-1 overflow-y-auto max-h-48 custom-scrollbar">
+                                <div @click.stop="setCourseFilter('all')" class="px-2.5 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex justify-between items-center cursor-pointer border-b border-slate-100 dark:border-slate-700/50">
+                                    <span>All Courses</span>
+                                    <span v-if="props.materials.filter(m => m.approval_status === 'pending').length > 0" class="bg-red-500 text-white px-1.5 py-0.5 rounded shadow-sm shrink-0 text-[8px]">{{ props.materials.filter(m => m.approval_status === 'pending').length }}</span>
+                                </div>
+                                <div v-for="c in availableCourses" :key="c.id" @click.stop="setCourseFilter(c.id)" class="px-2.5 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex justify-between items-center cursor-pointer">
+                                    <span class="truncate pr-2">{{ c.title }}</span>
+                                    <span v-if="c.pendingCount > 0" class="bg-red-500 text-white px-1.5 py-0.5 rounded shadow-sm shrink-0 text-[8px]">{{ c.pendingCount }}</span>
+                                </div>
+                            </div>
+                        </transition>
+                    </div>
+
+                    <!-- SORT FILTER -->
+                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[130px] flex-1 sm:flex-none relative z-[50]">
+                        <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
+                        <select v-model="sortOrder" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
+                            <option value="desc">Newest First</option>
+                            <option value="asc">Oldest First</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
             <transition enter-active-class="transition ease-out duration-200" enter-from-class="opacity-0 -translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition ease-in duration-150" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 -translate-y-2">
-                <div v-if="selectedIds.length > 0" class="flex flex-wrap items-center gap-2 bg-blue-50 dark:bg-blue-900/20 p-2.5 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
+                <div v-if="selectedIds.length > 0" class="flex flex-wrap items-center gap-2 bg-blue-50 dark:bg-blue-900/20 p-2.5 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm relative z-0">
                     <span class="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 mr-auto flex items-center gap-2">
                         <svg v-if="isProcessingBulk" class="animate-spin w-3 h-3 text-blue-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                         {{ selectedIds.length }} Selected
@@ -288,14 +359,14 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                 </div>
             </transition>
 
-            <div v-if="displayedMaterials.length > 0" class="flex items-center gap-2 px-1">
+            <div v-if="displayedMaterials.length > 0" class="flex items-center gap-2 px-1 relative z-0">
                 <input type="checkbox" :checked="isAllSelected" @change="toggleAll" id="selectAll" class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer shadow-sm">
                 <label for="selectAll" class="text-[10px] font-black uppercase tracking-widest text-slate-500 cursor-pointer select-none">
                     Select All in Tab
                 </label>
             </div>
 
-            <div v-if="Object.keys(groupedMaterials).length > 0" class="space-y-4">
+            <div v-if="Object.keys(groupedMaterials).length > 0" class="space-y-4 relative z-0">
                 <div v-for="(group, courseName) in groupedMaterials" :key="courseName" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                     
                     <div class="bg-slate-50 dark:bg-slate-900/50 p-2.5 px-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
@@ -374,7 +445,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                 </div>
             </div>
 
-            <div v-else class="text-center py-12 bg-slate-50 dark:bg-slate-900/30 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+            <div v-else class="text-center py-12 bg-slate-50 dark:bg-slate-900/30 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl relative z-0">
                 <p class="text-slate-400 text-[10px] font-black uppercase tracking-widest">No materials found.</p>
             </div>
         </div>
@@ -512,5 +583,18 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
+}
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 10px;
+}
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.4);
 }
 </style>

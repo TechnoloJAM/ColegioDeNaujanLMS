@@ -92,21 +92,22 @@ const downloadCSV = () => {
                 </div>
 
                 <div class="flex items-center gap-3">
-                    <button @click="downloadCSV" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-all flex items-center gap-1.5 h-full">
-                        <Download class="w-4 h-4" />
+                    <button @click="downloadCSV" class="w-full sm:w-auto justify-center bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-all flex items-center gap-1.5 h-full">
+                        <Download class="w-4 h-4 shrink-0" />
                         Export to CSV
                     </button>
                 </div>
             </div>
 
+            <!-- FILTERS: Full width on mobile, side-by-side on desktop -->
             <div class="flex flex-col sm:flex-row gap-3 mb-4">
-                <div class="relative flex-1 max-w-md">
+                <div class="relative flex-1">
                     <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input v-model="searchQuery" type="text" placeholder="Search by course or teacher name..." 
-                        class="w-full pl-9 pr-4 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 transition shadow-sm" />
+                        class="w-full pl-9 pr-4 py-2 sm:py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 transition shadow-sm" />
                 </div>
                 
-                <select v-model="selectedCourseId" class="py-1.5 px-3 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer min-w-[200px]">
+                <select v-model="selectedCourseId" class="w-full sm:w-auto sm:min-w-[200px] py-2 sm:py-1.5 px-3 text-[10px] sm:text-xs font-bold uppercase tracking-widest sm:tracking-normal sm:normal-case rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer">
                     <option value="all">All Courses</option>
                     <option v-for="c in courses" :key="c.id" :value="c.id">{{ c.title }}</option>
                 </select>
@@ -121,60 +122,90 @@ const downloadCSV = () => {
 
                 <div v-for="course in filteredCourses" :key="course.id" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                     
+                    <!-- Course Header -->
                     <div class="bg-slate-50 dark:bg-slate-900/50 p-2.5 px-3 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
-                        <div class="flex items-center gap-2">
-                            <h2 class="font-black text-[11px] sm:text-xs text-slate-900 dark:text-white uppercase tracking-tight">{{ course.title }}</h2>
-                            <span class="text-[7px] sm:text-[8px] font-mono bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-1.5 py-0.5 rounded">{{ course.enrollment_code }}</span>
-                            <span class="text-[8px] font-bold uppercase tracking-widest text-slate-400 hidden sm:inline">| {{ course.teacher }} | {{ formatYearLevel(course.difficulty_level) }}</span>
+                        <div class="flex items-center gap-2 min-w-0">
+                            <h2 class="font-black text-[11px] sm:text-xs text-slate-900 dark:text-white uppercase tracking-tight truncate">{{ course.title }}</h2>
+                            <span class="text-[7px] sm:text-[8px] font-mono bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-1.5 py-0.5 rounded shrink-0">{{ course.enrollment_code }}</span>
+                            <span class="text-[8px] font-bold uppercase tracking-widest text-slate-400 hidden sm:inline shrink-0">| {{ course.teacher }} | {{ formatYearLevel(course.difficulty_level) }}</span>
                         </div>
-                        <div class="text-[8px] font-black bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300 shadow-sm">
+                        <div class="text-[8px] font-black bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-300 shadow-sm shrink-0">
                             {{ course.students.length }} Enrolled
                         </div>
                     </div>
 
-                    <div class="overflow-x-auto custom-scrollbar">
-                        <table v-if="course.students.length > 0" class="w-full text-left text-[9px] sm:text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                            <thead class="uppercase font-black text-slate-400 bg-slate-50/30 dark:bg-slate-900/20 border-b border-slate-100 dark:border-slate-700/50">
-                                <tr>
-                                    <th class="px-2 sm:px-3 py-1.5 text-center w-6">#</th>
-                                    <th class="px-2 sm:px-3 py-1.5">Student</th>
-                                    <th class="px-2 sm:px-3 py-1.5 text-right bg-blue-50/30 dark:bg-blue-900/10">Assign. <span class="text-blue-400">({{ course.max_assignment }})</span></th>
-                                    <th class="px-2 sm:px-3 py-1.5 text-right bg-purple-50/30 dark:bg-purple-900/10">Act. <span class="text-purple-400">({{ course.max_activity }})</span></th>
-                                    <th class="px-2 sm:px-3 py-1.5 text-right bg-orange-50/30 dark:bg-orange-900/10">P.T. <span class="text-orange-400">({{ course.max_pt }})</span></th>
-                                    <th class="px-2 sm:px-3 py-1.5 text-right border-l border-slate-100 dark:border-slate-700">Total <span class="text-slate-500">({{ course.total_points }})</span></th>
-                                    <th class="px-2 sm:px-3 py-1.5 text-right">%</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-50 dark:divide-slate-700/30">
-                                <tr v-for="(student, index) in course.students" :key="student.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition">
-                                    <td class="px-2 sm:px-3 py-1 text-center font-bold text-slate-400">{{ index + 1 }}</td>
-                                    
-                                    <td class="px-2 sm:px-3 py-1">
-                                        <div class="font-bold text-slate-900 dark:text-white truncate max-w-[120px] sm:max-w-[180px]">{{ student.name }}</div>
-                                    </td>
-                                    
-                                    <td class="px-2 sm:px-3 py-1 text-right font-medium bg-blue-50/10 dark:bg-blue-900/5">{{ student.assignment_score }}</td>
-                                    <td class="px-2 sm:px-3 py-1 text-right font-medium bg-purple-50/10 dark:bg-purple-900/5">{{ student.activity_score }}</td>
-                                    <td class="px-2 sm:px-3 py-1 text-right font-medium bg-orange-50/10 dark:bg-orange-900/5">{{ student.pt_score }}</td>
-                                    
-                                    <td class="px-2 sm:px-3 py-1 text-right font-black text-slate-800 dark:text-slate-200 border-l border-slate-50 dark:border-slate-700/50">{{ student.total_score }}</td>
-                                    
-                                    <td class="px-2 sm:px-3 py-1 text-right">
-                                        <span class="text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded"
-                                            :class="{
-                                                'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400': student.percentage >= 85,
-                                                'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400': student.percentage >= 60 && student.percentage < 85,
-                                                'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': student.percentage < 60
-                                            }">
-                                            {{ student.percentage }}%
-                                        </span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <div v-else class="p-4 text-center text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                            No students enrolled.
+                    <div v-if="course.students.length > 0">
+                        <!-- DESKTOP VIEW: Standard Horizontal Table -->
+                        <div class="hidden md:block overflow-x-auto custom-scrollbar">
+                            <table class="w-full text-left text-[9px] sm:text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                <thead class="uppercase font-black text-slate-400 bg-slate-50/30 dark:bg-slate-900/20 border-b border-slate-100 dark:border-slate-700/50">
+                                    <tr>
+                                        <th class="px-2 sm:px-3 py-1.5 text-center w-6">#</th>
+                                        <th class="px-2 sm:px-3 py-1.5">Student</th>
+                                        <th class="px-2 sm:px-3 py-1.5 text-right bg-blue-50/30 dark:bg-blue-900/10">Assign. <span class="text-blue-400">({{ course.max_assignment }})</span></th>
+                                        <th class="px-2 sm:px-3 py-1.5 text-right bg-purple-50/30 dark:bg-purple-900/10">Act. <span class="text-purple-400">({{ course.max_activity }})</span></th>
+                                        <th class="px-2 sm:px-3 py-1.5 text-right bg-orange-50/30 dark:bg-orange-900/10">P.T. <span class="text-orange-400">({{ course.max_pt }})</span></th>
+                                        <th class="px-2 sm:px-3 py-1.5 text-right border-l border-slate-100 dark:border-slate-700">Total <span class="text-slate-500">({{ course.total_points }})</span></th>
+                                        <th class="px-2 sm:px-3 py-1.5 text-right">%</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-50 dark:divide-slate-700/30">
+                                    <tr v-for="(student, index) in course.students" :key="student.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition">
+                                        <td class="px-2 sm:px-3 py-1 text-center font-bold text-slate-400">{{ index + 1 }}</td>
+                                        <td class="px-2 sm:px-3 py-1">
+                                            <div class="font-bold text-slate-900 dark:text-white truncate max-w-[180px]">{{ student.name }}</div>
+                                        </td>
+                                        <td class="px-2 sm:px-3 py-1 text-right font-medium bg-blue-50/10 dark:bg-blue-900/5">{{ student.assignment_score }}</td>
+                                        <td class="px-2 sm:px-3 py-1 text-right font-medium bg-purple-50/10 dark:bg-purple-900/5">{{ student.activity_score }}</td>
+                                        <td class="px-2 sm:px-3 py-1 text-right font-medium bg-orange-50/10 dark:bg-orange-900/5">{{ student.pt_score }}</td>
+                                        <td class="px-2 sm:px-3 py-1 text-right font-black text-slate-800 dark:text-slate-200 border-l border-slate-50 dark:border-slate-700/50">{{ student.total_score }}</td>
+                                        <td class="px-2 sm:px-3 py-1 text-right">
+                                            <span class="text-[9px] font-black px-1.5 py-0.5 rounded"
+                                                :class="{
+                                                    'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400': student.percentage >= 85,
+                                                    'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400': student.percentage >= 60 && student.percentage < 85,
+                                                    'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': student.percentage < 60
+                                                }">
+                                                {{ student.percentage }}%
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
+
+                        <!-- MOBILE VIEW: Ultra Compact Vertical List -->
+                        <div class="md:hidden flex flex-col divide-y divide-slate-50 dark:divide-slate-700/30">
+                            <div v-for="(student, index) in course.students" :key="student.id" class="p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition flex flex-col gap-1.5">
+                                <div class="flex justify-between items-center gap-2">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <span class="text-[9px] font-black text-slate-400 w-4 text-center shrink-0">{{ index + 1 }}</span>
+                                        <span class="text-[11px] font-bold text-slate-900 dark:text-white truncate leading-tight">{{ student.name }}</span>
+                                    </div>
+                                    <span class="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" 
+                                        :class="{
+                                            'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400': student.percentage >= 85,
+                                            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400': student.percentage >= 60 && student.percentage < 85,
+                                            'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': student.percentage < 60
+                                        }">
+                                        {{ student.percentage }}%
+                                    </span>
+                                </div>
+                                <div class="flex items-center justify-between text-[8px] font-bold uppercase tracking-widest ml-6">
+                                    <div class="flex gap-2.5 text-slate-500 dark:text-slate-400">
+                                        <span>Asg: <span class="text-blue-600 dark:text-blue-400">{{ student.assignment_score }}</span></span>
+                                        <span>Act: <span class="text-purple-600 dark:text-purple-400">{{ student.activity_score }}</span></span>
+                                        <span>PT: <span class="text-orange-600 dark:text-orange-400">{{ student.pt_score }}</span></span>
+                                    </div>
+                                    <span class="text-slate-700 dark:text-slate-300">Tot: {{ student.total_score }}/{{ course.total_points }}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                    
+                    <div v-else class="p-4 text-center text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        No students enrolled.
                     </div>
                 </div>
 

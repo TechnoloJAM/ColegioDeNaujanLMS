@@ -157,6 +157,10 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     
     // Grades
     Route::get('/grades', [AdminDashboardController::class, 'gradesOverview'])->name('grades.index');
+
+    // Global Calendar Events
+    Route::post('/calendar/events', [CalendarController::class, 'storeEvent'])->name('calendar.store');
+    Route::delete('/calendar/events/{globalEvent}', [CalendarController::class, 'destroyEvent'])->name('calendar.destroy');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

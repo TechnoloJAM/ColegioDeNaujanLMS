@@ -20,6 +20,12 @@ const hiddenCourses = ref(JSON.parse(localStorage.getItem(storageKey)) || []);
 const activeTab = ref('active'); 
 
 const searchQuery = ref('');
+
+// --- NEW DYNAMIC FILTERS ---
+const selectedTeacherFilter = ref('all');
+const selectedYearFilter = ref('all');
+const sortOrder = ref('newest');
+
 const isCreateModalOpen = ref(false);
 const isEditModalOpen = ref(false);
 const selectedCourse = ref(null);
@@ -57,24 +63,52 @@ const formatYearLevel = (level) => {
     return levels[level] || level;
 };
 
-// --- DYNAMIC FILTERING (Applies Local Storage) ---
+// --- DYNAMIC FILTERING (Applies Local Storage, Search, Custom Filters & Sorting) ---
 const filteredCourses = computed(() => {
-    return props.courses.filter(course => {
+    let result = props.courses.filter(course => {
         
         // 1. Tab Filter Logic using Local Storage array
         const isHidden = hiddenCourses.value.includes(course.id);
         if (activeTab.value === 'active' && isHidden) return false;
         if (activeTab.value === 'hidden' && !isHidden) return false;
 
-        // 2. Search Logic
+        // 2. Teacher Filter
+        if (selectedTeacherFilter.value !== 'all' && course.teacher_id !== selectedTeacherFilter.value) return false;
+
+        // 3. Year Level Filter
+        if (selectedYearFilter.value !== 'all' && course.difficulty_level !== selectedYearFilter.value) return false;
+
+        // 4. Search Logic
         const query = searchQuery.value.toLowerCase();
-        return course.title.toLowerCase().includes(query) || 
-               course.enrollment_code.toLowerCase().includes(query) ||
-               (course.teacher && course.teacher.name.toLowerCase().includes(query));
+        if (query) {
+            return course.title.toLowerCase().includes(query) || 
+                   course.enrollment_code.toLowerCase().includes(query) ||
+                   (course.teacher && course.teacher.name.toLowerCase().includes(query));
+        }
+
+        return true;
+    });
+
+    // 5. Sorting Logic
+    return result.sort((a, b) => {
+        if (sortOrder.value === 'newest') {
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        }
+        if (sortOrder.value === 'oldest') {
+            return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        }
+        if (sortOrder.value === 'students_high') {
+            return (b.enrollments ? b.enrollments.length : 0) - (a.enrollments ? a.enrollments.length : 0);
+        }
+        if (sortOrder.value === 'students_low') {
+            return (a.enrollments ? a.enrollments.length : 0) - (b.enrollments ? b.enrollments.length : 0);
+        }
+        return 0;
     });
 });
 
 watch(activeTab, () => { selectedIds.value = []; });
+watch([selectedTeacherFilter, selectedYearFilter], () => { selectedIds.value = []; });
 
 const toggleSelection = (id) => {
     if (selectedIds.value.includes(id)) selectedIds.value = selectedIds.value.filter(i => i !== id);
@@ -215,11 +249,50 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
             <div class="flex-1 min-w-0 w-full order-1 md:order-2">
                 
-                <div class="relative w-full md:max-w-sm mb-4">
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg class="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                <!-- NEW COMPACT SEARCH & FILTER BAR -->
+                <div class="flex flex-col lg:flex-row gap-2 mb-4">
+                    <!-- Search Input -->
+                    <div class="relative flex-1">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                        </div>
+                        <input v-model="searchQuery" type="text" placeholder="Search courses..." class="w-full pl-9 pr-4 py-2 sm:py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition shadow-sm" />
                     </div>
-                    <input v-model="searchQuery" type="text" placeholder="Search courses by title, teacher, or code..." :class="inputClass" class="pl-9" />
+
+                    <!-- Horizontally scrollable filters for mobile -->
+                    <div class="flex gap-2 w-full lg:w-auto overflow-x-auto scrollbar-hide pb-1 lg:pb-0">
+                        <!-- Teacher Filter -->
+                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[130px]">
+                            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                            <select v-model="selectedTeacherFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
+                                <option value="all">All Teachers</option>
+                                <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
+                            </select>
+                        </div>
+
+                        <!-- Year Level Filter -->
+                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[120px]">
+                            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z"></path></svg>
+                            <select v-model="selectedYearFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
+                                <option value="all">All Years</option>
+                                <option value="beginner">1st Year</option>
+                                <option value="intermediate">2nd Year</option>
+                                <option value="advanced">3rd Year</option>
+                                <option value="final">4th Year</option>
+                            </select>
+                        </div>
+
+                        <!-- Sort Filter -->
+                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[130px]">
+                            <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
+                            <select v-model="sortOrder" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                                <option value="students_high">Most Students</option>
+                                <option value="students_low">Least Students</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="flex gap-4 border-b border-slate-200 dark:border-slate-700 mb-4 overflow-x-auto no-scrollbar">
