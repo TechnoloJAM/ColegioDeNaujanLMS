@@ -3,11 +3,17 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Modal from '@/Components/Modal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
-import { Head, router, useForm } from '@inertiajs/vue3';
+import { Head, router, useForm, Link } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 
+// 🛡️ CRITICAL FIX: Props accepts Object to allow backend ->paginate() wrapper
 const props = defineProps({
-    users: Array
+    users: [Array, Object]
+});
+
+// Helper to extract array from either paginated object or fallback flat array
+const usersList = computed(() => {
+    return Array.isArray(props.users) ? props.users : (props.users.data || []);
 });
 
 // --- SEARCH, FILTER & SORT STATES ---
@@ -46,9 +52,8 @@ const selectedUserForPassword = ref(null);
 const selectedUserForImpersonate = ref(null);
 
 // --- 1. DYNAMIC BASE TAB FILTERING ---
-// First, isolate the users that belong ONLY to the currently selected tab
 const baseTabUsers = computed(() => {
-    return props.users.filter(user => {
+    return usersList.value.filter(user => {
         if (activeTab.value === 'archive') {
             return user.status === 'suspended' && user.role === archiveSubTab.value;
         } else {
@@ -58,7 +63,6 @@ const baseTabUsers = computed(() => {
 });
 
 // --- 2. DYNAMIC FILTER OPTIONS ---
-// Scan ONLY the baseTabUsers to populate the dropdown options dynamically
 const availablePrograms = computed(() => {
     const progs = new Set();
     baseTabUsers.value.forEach(u => { if (u.program) progs.add(u.program); });
@@ -72,15 +76,12 @@ const availableYears = computed(() => {
             yrs.add(u.school_id.split('-')[0]);
         }
     });
-    return Array.from(yrs).sort((a, b) => b - a); // Sort newest year first
+    return Array.from(yrs).sort((a, b) => b - a);
 });
 
 // --- 3. FINAL FILTERING LOGIC ---
-// Apply search, specific filters, and sorting to the isolated tab users
 const filteredUsers = computed(() => {
     let result = baseTabUsers.value.filter(user => {
-        
-        // Search Query
         const q = searchQuery.value.toLowerCase();
         if (q) {
             const searchMatch = user.name.toLowerCase().includes(q) || 
@@ -89,16 +90,12 @@ const filteredUsers = computed(() => {
             if (!searchMatch) return false;
         }
 
-        // Program Filter
         if (filterProgram.value !== 'all' && user.program !== filterProgram.value) return false;
-
-        // Year Filter
         if (filterYear.value !== 'all' && (!user.school_id || !user.school_id.startsWith(filterYear.value + '-'))) return false;
 
         return true;
     });
 
-    // Sorting Logic
     return result.sort((a, b) => {
         if (sortBy.value === 'newest') return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
         if (sortBy.value === 'oldest') return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
@@ -108,7 +105,6 @@ const filteredUsers = computed(() => {
     });
 });
 
-// Reset selection and sub-filters when changing main tabs
 watch(activeTab, () => { 
     selectedIds.value = []; 
     filterProgram.value = 'all';
@@ -116,7 +112,6 @@ watch(activeTab, () => {
 });
 watch(archiveSubTab, () => { selectedIds.value = []; });
 
-// --- CHECKBOX LOGIC ---
 const toggleSelection = (id) => {
     if (selectedIds.value.includes(id)) selectedIds.value = selectedIds.value.filter(i => i !== id);
     else selectedIds.value.push(id);
@@ -132,13 +127,11 @@ const toggleAll = () => {
     else selectedIds.value = filteredUsers.value.map(u => u.id);
 };
 
-// --- OPEN USER PROFILE CARD ---
 const openUserDetails = (user) => {
     selectedUserDetails.value = user;
     isUserDetailsModalOpen.value = true;
 };
 
-// --- GENERATORS ---
 const generateString = () => {
     const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
     let pwd = "";
@@ -155,7 +148,6 @@ const generateSchoolId = () => {
     form.school_id = `${year}-${randomNums}`;
 };
 
-// --- SUBMIT ACTIONS ---
 const submitUser = () => {
     form.post(route('admin.users.store'), {
         preserveScroll: true,
@@ -212,7 +204,6 @@ const openResetPasswordModal = (user) => {
 };
 const submitResetPassword = () => { resetPasswordForm.patch(route('admin.users.reset-password', selectedUserForPassword.value.id), { preserveScroll: true, onSuccess: () => { isResetPasswordModalOpen.value = false; selectedUserForPassword.value = null; alert('Password reset successfully. Please securely share the new password with the user.'); } }); };
 
-// --- PROFESSIONAL CSV EXPORT ---
 const exportToCSV = () => {
     const lines = [];
     
@@ -303,10 +294,8 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <input v-model="searchQuery" type="text" placeholder="Search by name, email, or ID..." class="w-full h-8 pl-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs shadow-sm transition-colors" />
                     </div>
 
-                    <!-- DYNAMIC FILTER GRID: Snaps into a beautiful grid on mobile -->
                     <div class="grid grid-cols-2 sm:flex sm:flex-row gap-2 w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
                         
-                        <!-- Program Filter dynamically shows ONLY if the active tab has programs available -->
                         <div v-if="availablePrograms.length > 0" class="col-span-2 sm:col-span-1 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[140px]">
                             <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                             <select v-model="filterProgram" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
@@ -315,7 +304,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             </select>
                         </div>
                         
-                        <!-- Year Filter dynamically shows ONLY if the active tab has users with year IDs -->
                         <div v-if="availableYears.length > 0" class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[120px]">
                             <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                             <select v-model="filterYear" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
@@ -455,12 +443,26 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             </tbody>
                         </table>
                     </div>
+                    
+                    <div v-if="!Array.isArray(users) && users.links" class="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 sm:px-6">
+                        <div class="flex flex-1 justify-between sm:hidden">
+                            <Component :is="users.prev_page_url ? 'Link' : 'span'" :href="users.prev_page_url || '#'" class="relative inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50" :class="{'opacity-50 cursor-not-allowed': !users.prev_page_url}">Previous</Component>
+                            <Component :is="users.next_page_url ? 'Link' : 'span'" :href="users.next_page_url || '#'" class="relative inline-flex items-center px-4 py-2 ml-3 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50" :class="{'opacity-50 cursor-not-allowed': !users.next_page_url}">Next</Component>
+                        </div>
+                        <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                            <div><p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Showing <span class="font-black">{{ users.from || 0 }}</span> to <span class="font-black">{{ users.to || 0 }}</span> of <span class="font-black">{{ users.total || 0 }}</span> users</p></div>
+                            <div>
+                                <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                                    <Link v-for="(link, k) in users.links" :key="k" :href="link.url || '#'" v-html="link.label" class="relative inline-flex items-center px-3 py-1.5 text-[10px] font-bold ring-1 ring-inset ring-slate-300 focus:z-20 focus:outline-offset-0" :class="link.active ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'"></Link>
+                                </nav>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
             </div>
         </div>
 
-        <!-- USER DETAILS CARD MODAL -->
         <Modal :show="isUserDetailsModalOpen" @close="isUserDetailsModalOpen = false" maxWidth="sm">
             <div class="relative bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 <div class="h-16 bg-gradient-to-r from-blue-500 to-indigo-600"></div>

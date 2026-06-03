@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import InputError from '@/Components/InputError.vue'; 
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import Modal from '@/Components/Modal.vue';
@@ -13,6 +14,10 @@ const imageErrors = ref({});
 
 const showDetailsModal = ref(false);
 const selectedAssignment = ref(null);
+
+// 🛡️ NEW: Material Preview State
+const showMaterialPreview = ref(false);
+const selectedMaterialPath = ref(null);
 
 const formSubmission = useForm({ 
     files: [],
@@ -36,7 +41,7 @@ const countAssignments = (c, type) => {
     }).length;
 };
 
-// NEW: Computed properties for notification dots
+// Computed properties for notification dots
 const pendingTasksCount = computed(() => {
     if (!selectedCourse.value || !selectedCourse.value.assignments) return 0;
     const now = new Date();
@@ -120,12 +125,24 @@ const openDetails = (a) => {
     showDetailsModal.value = true; 
 };
 
+// 🛡️ NEW: Function to open the Material Preview Modal
+const openMaterialPreview = (path) => {
+    selectedMaterialPath.value = path;
+    showMaterialPreview.value = true;
+};
+
 const submitWork = () => {
     if (isOverSizeLimit.value) return;
     
+    // Using Inertia's native useForm submission just like the Teacher side
     formSubmission.post(route('assignments.submit', selectedAssignment.value.id), { 
-        onSuccess: () => { showDetailsModal.value = false; formSubmission.reset(); formSubmission.files = []; }, 
-        preserveScroll: true 
+        forceFormData: true, // Guarantees files are packaged correctly
+        preserveScroll: true,
+        onSuccess: () => { 
+            showDetailsModal.value = false; 
+            formSubmission.reset(); 
+            formSubmission.files = []; 
+        }
     });
 };
 
@@ -156,7 +173,6 @@ const formatDate = (dateString) => {
                 </div>
             </div>
 
-            <!-- Mobile Class Selector Dropdown -->
             <div class="md:hidden w-full px-2 mb-2 z-20" v-if="courses.length > 0">
                 <select @change="(e) => selectCourse(Number(e.target.value))" class="w-full text-xs font-bold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer truncate">
                     <option v-for="c in courses" :key="c.id" :value="c.id" :selected="c.id === selectedCourseId">
@@ -167,7 +183,6 @@ const formatDate = (dateString) => {
 
             <div v-if="courses.length > 0" class="flex-1 flex flex-col md:flex-row gap-0 md:gap-4 overflow-hidden bg-slate-50/30 md:bg-transparent rounded-none md:rounded-lg relative">
                 
-                <!-- Desktop Sidebar Class List -->
                 <aside class="hidden md:flex w-56 lg:w-64 bg-slate-50/50 md:bg-white dark:bg-slate-900 md:dark:bg-slate-800 flex-col shrink-0 md:border border-slate-200 dark:border-slate-700 md:rounded-lg overflow-hidden md:h-full shadow-sm">
                     <div class="p-3 border-b border-slate-100 dark:border-slate-700/50 shrink-0 items-center justify-between">
                         <h3 class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Your Classes</h3>
@@ -204,7 +219,6 @@ const formatDate = (dateString) => {
                     </div>
                 </aside>
 
-                <!-- Main Task Area -->
                 <main class="flex-1 bg-transparent md:bg-white dark:bg-slate-800 flex flex-col md:border border-slate-200 dark:border-slate-700 md:rounded-lg overflow-hidden h-full min-h-[400px] md:shadow-sm relative">
                     <div v-if="selectedCourse" class="flex flex-col h-full pt-0 md:pt-1">
                         
@@ -229,7 +243,6 @@ const formatDate = (dateString) => {
                                 </button>
                             </div>
                             
-                            <!-- Desktop Sort -->
                             <div class="hidden sm:flex shrink-0 py-2 ml-2 items-center bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded pr-1 shadow-sm">
                                 <select v-model="sortOrder" class="text-[9px] font-black uppercase tracking-widest text-slate-500 bg-transparent border-none focus:ring-0 cursor-pointer py-1.5 pl-2 pr-6">
                                     <option value="desc">Latest</option>
@@ -238,7 +251,6 @@ const formatDate = (dateString) => {
                             </div>
                         </div>
 
-                        <!-- Mobile Sort Bar (Extremely thin) -->
                         <div class="sm:hidden flex justify-end px-2 py-1.5 bg-slate-100/50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700">
                              <select v-model="sortOrder" class="text-[8px] font-black uppercase tracking-widest text-slate-500 bg-transparent border-none focus:ring-0 cursor-pointer py-0 pl-1 pr-6 h-5">
                                 <option value="desc">Sort: Latest</option>
@@ -246,7 +258,6 @@ const formatDate = (dateString) => {
                             </select>
                         </div>
 
-                        <!-- ULTRA COMPACT TASK LIST -->
                         <div class="flex-1 overflow-y-auto p-1.5 sm:p-3 custom-scrollbar pb-24">
                             <div v-if="filteredAssignments.length > 0" class="flex flex-col gap-1.5 sm:gap-2">
                                 
@@ -270,14 +281,12 @@ const formatDate = (dateString) => {
                                                     {{ a.title }}
                                                 </h4>
                                             </div>
-                                            <!-- Points Badge -->
                                             <span class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-slate-100 dark:bg-slate-900/50 px-1.5 py-0.5 rounded shrink-0"
                                                   :class="activeTab === 'upcoming' ? 'text-blue-600 dark:text-blue-400' : activeTab === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'">
                                                 {{ a.points }} pts
                                             </span>
                                         </div>
 
-                                        <!-- Hidden description on mobile, clamped on desktop -->
                                         <p class="hidden sm:block text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 truncate font-medium leading-snug mt-0.5">
                                             {{ a.description || 'No instructions provided.' }}
                                         </p>
@@ -291,7 +300,6 @@ const formatDate = (dateString) => {
                                             </span>
                                         </div>
                                         
-                                        <!-- Mobile Status/Action -->
                                         <div v-if="isClosed(a) && activeTab !== 'completed'" class="text-[7px] sm:text-[9px] font-black text-red-600 bg-red-50 dark:bg-red-900/20 px-1 py-0.5 rounded uppercase tracking-widest border border-red-100 dark:border-red-800/50">Locked</div>
                                         <div v-else-if="activeTab === 'completed'" class="text-[7px] sm:text-[9px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1 py-0.5 rounded uppercase tracking-widest border border-emerald-100 dark:border-emerald-800/50">Done</div>
                                         
@@ -321,9 +329,47 @@ const formatDate = (dateString) => {
             </div>
         </div>
 
-        <!-- Submission Details Modal -->
+        <Modal :show="showMaterialPreview" @close="showMaterialPreview = false" maxWidth="4xl">
+            <div class="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[85vh]">
+                <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
+                    <h3 class="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-tight">
+                        <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                        </div>
+                        Material Preview
+                    </h3>
+                    <button @click="showMaterialPreview = false" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-300 transition shrink-0">&times;</button>
+                </div>
+                
+                <div class="flex-1 p-4 bg-slate-100 dark:bg-slate-950/50 flex flex-col items-center justify-center relative overflow-hidden">
+                    <iframe v-if="selectedMaterialPath?.toLowerCase().endsWith('.pdf')" :src="`/storage/${selectedMaterialPath}`" class="w-full h-full border-none rounded-lg shadow-sm bg-white dark:bg-slate-900"></iframe>
+                    <img v-else-if="selectedMaterialPath?.match(/\.(jpeg|jpg|png|gif)$/i)" :src="`/storage/${selectedMaterialPath}`" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
+                    
+                    <div v-else class="text-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-sm w-full">
+                        <svg class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <p class="text-slate-500 font-black mb-1 text-[11px] uppercase tracking-widest">Preview unavailable</p>
+                        <p class="text-slate-400 text-[10px] font-bold mb-6">This file type cannot be viewed directly.</p>
+                        <div class="flex flex-col gap-2">
+                            <a :href="`/storage/${selectedMaterialPath}`" download class="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition text-[10px] font-black uppercase tracking-widest px-4 py-3 rounded-lg shadow-sm w-full">
+                                Download File
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Modal>
+
         <Modal :show="showDetailsModal" @close="showDetailsModal = false" maxWidth="2xl">
             <div class="bg-white dark:bg-slate-800 rounded-2xl overflow-hidden flex flex-col h-[85vh]">
+                
+                <div v-if="$page.props.flash.error" class="bg-red-50 border-b border-red-200 text-red-600 p-4 text-xs font-bold shadow-sm">
+                    <div class="flex items-center gap-2 mb-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <span class="font-black uppercase tracking-widest">Upload Failed</span>
+                    </div>
+                    {{ $page.props.flash.error }}
+                </div>
+
                 <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
                     <div class="flex gap-4"> 
                         <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
@@ -357,6 +403,22 @@ const formatDate = (dateString) => {
                         <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Teacher's Instructions</h3>
                         <div class="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800 leading-relaxed" v-html="linkify(selectedAssignment?.description)"></div>
                     </div>
+
+                    <div v-if="selectedAssignment?.attachment_paths && getPaths(selectedAssignment.attachment_paths).length" class="space-y-2 mt-4">
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Attached Materials</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div v-for="(path, index) in getPaths(selectedAssignment.attachment_paths)" :key="index" class="flex justify-between items-center p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <div class="flex items-center gap-2 overflow-hidden">
+                                    <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                                    <span class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">Material {{ index + 1 }}</span>
+                                </div>
+                                <div class="flex gap-3 shrink-0 ml-2">
+                                    <button type="button" @click.prevent="openMaterialPreview(path)" class="text-blue-600 hover:text-blue-500 text-[10px] font-black uppercase tracking-widest transition">View</button>
+                                    <a :href="`/storage/${path}`" download class="text-emerald-600 hover:text-emerald-500 text-[10px] font-black uppercase tracking-widest transition">Save</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     
                     <hr class="border-slate-100 dark:border-slate-700" />
 
@@ -374,8 +436,8 @@ const formatDate = (dateString) => {
                                     <div v-for="(path, index) in getPaths(selectedAssignment.submissions[0].file_paths)" :key="index" class="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-700">
                                         <span class="text-[10px] font-bold truncate w-32">Attachment {{ index + 1 }}</span>
                                         <div class="flex gap-2">
-                                            <a :href="`/storage/${path}`" target="_blank" class="text-blue-600 text-[10px] font-black uppercase hover:underline">View</a>
-                                            <a :href="`/storage/${path}`" download class="text-emerald-600 text-[10px] font-black uppercase hover:underline">Save</a>
+                                            <button type="button" @click.prevent="openMaterialPreview(path)" class="text-blue-600 hover:text-blue-500 text-[10px] font-black uppercase tracking-widest transition">View</button>
+                                            <a :href="`/storage/${path}`" download class="text-emerald-600 hover:text-emerald-500 text-[10px] font-black uppercase tracking-widest transition">Save</a>
                                         </div>
                                     </div>
                                 </div>
@@ -400,6 +462,8 @@ const formatDate = (dateString) => {
                         <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest">Write Answer or Links (Optional)</label>
                             <textarea v-model="formSubmission.text_content" class="w-full bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-xl p-4 text-sm h-32 focus:ring-2 focus:ring-blue-500 resize-none shadow-inner" placeholder="Enter your text response or URLs here..."></textarea>
+                            
+                            <InputError :message="formSubmission.errors.text_content" class="mt-1" />
                         </div>
                         
                         <div class="space-y-2">
@@ -411,12 +475,17 @@ const formatDate = (dateString) => {
                                     <p class="text-xs font-bold uppercase tracking-wider">Drag files or Click to Upload</p>
                                 </div>
                             </div>
+                            
+                            <InputError :message="formSubmission.errors.files" class="mt-2 text-center" />
                         </div>
                         
                         <div v-if="formSubmission.files.length" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             <div v-for="(f,i) in formSubmission.files" :key="i" class="p-3 bg-white dark:bg-slate-700 rounded-xl border border-slate-100 dark:border-slate-600 flex justify-between items-center shadow-sm">
-                                <span class="text-[10px] font-bold truncate w-3/4">{{ f.name }}</span>
-                                <span class="text-[9px] font-black text-slate-400">{{ (f.size/1024).toFixed(0) }} KB</span>
+                                <div class="flex items-center gap-2 overflow-hidden pr-2">
+                                    <button type="button" @click="removeFile(i)" class="text-red-500 hover:text-red-700 transition shrink-0">&times;</button>
+                                    <span class="text-[10px] font-bold truncate">{{ f.name }}</span>
+                                </div>
+                                <span class="text-[9px] font-black text-slate-400 shrink-0">{{ (f.size/1024).toFixed(0) }} KB</span>
                             </div>
                         </div>
                         

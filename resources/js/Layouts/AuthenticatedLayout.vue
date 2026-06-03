@@ -23,12 +23,10 @@ const notifications = computed(() => {
 const unreadCount = computed(() => page.props.auth.unread_count || 0);
 const previousUnreadCount = ref(unreadCount.value);
 
-// --- NEW: Global Notification Counts ---
 const pendingMaterialsCount = computed(() => page.props.auth.pending_materials_count || 0);
 const pendingGradingCount = computed(() => page.props.auth.pending_grading_count || 0);
 const pendingTasksCount = computed(() => page.props.auth.pending_tasks_count || 0);
 
-// --- NEW NOTIFICATION TAB & DELETE LOGIC ---
 const notifTab = ref('unread');
 
 const displayedNotifications = computed(() => {
@@ -50,17 +48,19 @@ const markAllAsRead = () => {
         preserveScroll: true,
         preserveState: true,
         onSuccess: () => {
-            notifTab.value = 'all'; // Automatically swap to 'all' tab so it doesn't look empty!
+            notifTab.value = 'all'; 
         }
     });
 };
 
-// -------------------------------------------
-
+// 🛡️ CRITICAL FIX: Safe Audio Player (Prevents JS Crashing if file is missing)
 watch(unreadCount, (newCount) => {
     if (newCount > previousUnreadCount.value) {
-        const audio = new Audio('/sounds/notification.mp3');
-        audio.play().catch(error => console.log('Notification sound blocked.'));
+        try {
+            const audio = new Audio('/sounds/notification.mp3');
+            audio.play().catch(() => {
+            });
+        } catch(e) { }
     }
     previousUnreadCount.value = newCount;
 }, { immediate: true });
@@ -230,7 +230,6 @@ defineExpose({
                     
                     <span class="text-sm truncate flex-1">{{ item.name }}</span>
 
-                    <!-- Desktop Navigation Red Badge -->
                     <span v-if="item.badge > 0" class="ml-2 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm animate-pulse">
                         {{ item.badge }}
                     </span>
@@ -366,7 +365,6 @@ defineExpose({
                 <div class="relative flex items-center justify-center">
                     <svg class="w-5 h-5 sm:w-6 sm:h-6 transition-transform group-hover:scale-110 mt-1" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" :d="item.icon"></path></svg>
                     
-                    <!-- Mobile Navigation Red Badge Dot -->
                     <span v-if="item.badge > 0" class="absolute top-0 -right-1.5 flex h-2.5 w-2.5">
                         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 border border-white dark:border-slate-900"></span>

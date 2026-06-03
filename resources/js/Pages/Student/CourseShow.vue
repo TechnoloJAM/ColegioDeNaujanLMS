@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import InputError from '@/Components/InputError.vue'; // 🛡️ CRITICAL: Fixed the Vue warning crash!
 import { Head, useForm, Link, usePage, router } from '@inertiajs/vue3';
 import { ref, onMounted, nextTick, computed, watch } from 'vue'; 
 import Modal from '@/Components/Modal.vue';
@@ -68,7 +69,7 @@ const formatRichText = (htmlContent) => {
     return processed;
 };
 
-// NEW: Computed properties for Notification Dots
+// Computed properties for Notification Dots
 const pendingTasksCount = computed(() => {
     const now = new Date();
     if (!props.course.assignments) return 0;
@@ -154,6 +155,17 @@ const getPaths = (paths) => {
     try { return JSON.parse(paths) || []; } catch (e) { return []; }
 };
 
+// File submission tracking
+const handleFileSelect = (e) => {
+    formSubmission.files = Array.from(e.target.files);
+};
+
+const totalFileSize = computed(() => {
+    return formSubmission.files.reduce((acc, file) => acc + file.size, 0);
+});
+const isOverSizeLimit = computed(() => totalFileSize.value > 15 * 1024 * 1024);
+const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+
 const openMaterialPreview = (path) => {
     selectedMaterialPath.value = path;
     showMaterialPreview.value = true;
@@ -171,7 +183,22 @@ const openSubmitModal = (a) => {
     }
     showSubmitModal.value = true; 
 };
-const submitWork = () => formSubmission.post(route('assignments.submit', selectedAssignment.value.id), { onSuccess: () => { showSubmitModal.value = false; formSubmission.reset(); }, preserveScroll: true });
+
+const submitWork = () => {
+    if (isOverSizeLimit.value) return;
+    
+    // Using Inertia's native useForm submission just like the Teacher side
+    formSubmission.post(route('assignments.submit', selectedAssignment.value.id), { 
+        forceFormData: true, // Guarantees files are packaged correctly
+        preserveScroll: true,
+        onSuccess: () => { 
+            showDetailsModal.value = false; 
+            formSubmission.reset(); 
+            formSubmission.files = []; 
+        }
+    });
+};
+
 const undoTurnIn = () => { if (confirm('Undo submission? This will remove your files and answers.')) router.post(route('assignments.unsubmit', selectedAssignment.value.id), {}, { onSuccess: () => showSubmitModal.value = false, preserveScroll: true }); };
 const leaveClass = () => { if (confirm('Leave this class? You will lose access.')) router.delete(route('student.courses.leave', props.course.id)); };
 </script>
@@ -204,7 +231,6 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                 </button>
                 <button @click="activeTab = 'assignments'" class="pb-3 text-xs sm:text-sm font-bold transition-all relative whitespace-nowrap" :class="activeTab === 'assignments' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'">
                     Tasks
-                    <!-- Red Dot Indicator for Main Tab -->
                     <span v-if="totalActionNeeded > 0" class="absolute top-0 -right-2 sm:-right-3 w-2 h-2 bg-red-500 border-2 border-white dark:border-slate-800 rounded-full animate-pulse shadow-sm"></span>
                     <div v-if="activeTab === 'assignments'" class="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 rounded-full"></div>
                 </button>
@@ -281,7 +307,6 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                 </div>
             </div>
 
-            <!-- COMPACT TASK LIST -->
             <div v-if="activeTab === 'assignments'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -290,14 +315,12 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                             class="flex-1 px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap relative"
                             :class="assignmentFilter === 'upcoming' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
                             UPCOMING
-                            <!-- Red Dot Indicator -->
                             <span v-if="pendingTasksCount > 0" class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_4px_rgba(239,68,68,0.8)]"></span>
                         </button>
                         <button @click="assignmentFilter = 'past_due'" 
                             class="flex-1 px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all whitespace-nowrap relative"
                             :class="assignmentFilter === 'past_due' ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
                             PAST DUE
-                            <!-- Red Dot Indicator -->
                             <span v-if="pastDueTasksCount > 0" class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_4px_rgba(239,68,68,0.8)]"></span>
                         </button>
                         <button @click="assignmentFilter = 'completed'" 
@@ -453,7 +476,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                             <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Submit Your Evidence</p> 
                         </div>
                     </div>
-                    <button @click="showDetailsModal = false" class="text-slate-400 hover:text-slate-600 text-2xl font-light">&times;</button>
+                    <button @click="showSubmitModal = false" class="text-slate-400 hover:text-slate-600 text-2xl font-light">&times;</button>
                 </div>
                 <div class="p-6 overflow-y-auto flex-1 space-y-6">
                     <div class="grid grid-cols-2 gap-4">
@@ -477,6 +500,22 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                         <div class="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800 leading-relaxed" v-html="linkify(selectedAssignment?.description)"></div>
                     </div>
                     
+                    <div v-if="selectedAssignment?.attachment_paths && getPaths(selectedAssignment.attachment_paths).length" class="space-y-2 mt-4">
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Attached Materials</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div v-for="(path, index) in getPaths(selectedAssignment.attachment_paths)" :key="index" class="flex justify-between items-center p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                <div class="flex items-center gap-2 overflow-hidden">
+                                    <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                                    <span class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">Material {{ index + 1 }}</span>
+                                </div>
+                                <div class="flex gap-3 shrink-0 ml-2">
+                                    <button type="button" @click.prevent="openMaterialPreview(path)" class="text-blue-600 hover:text-blue-500 text-[10px] font-black uppercase tracking-widest transition">View</button>
+                                    <a :href="`/storage/${path}`" download class="text-emerald-600 hover:text-emerald-500 text-[10px] font-black uppercase tracking-widest transition">Save</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <hr class="border-slate-100 dark:border-slate-700" />
 
                     <div v-if="selectedAssignment?.submissions[0]" class="space-y-4">
@@ -519,6 +558,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                         <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest">Write Answer or Links (Optional)</label>
                             <textarea v-model="formSubmission.text_content" class="w-full bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-xl p-4 text-sm h-32 focus:ring-2 focus:ring-blue-500 resize-none shadow-inner" placeholder="Enter your text response or URLs here..."></textarea>
+                            <InputError :message="formSubmission.errors.text_content" class="mt-1" />
                         </div>
                         
                         <div class="space-y-2">
@@ -530,6 +570,8 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                                     <p class="text-xs font-bold uppercase tracking-wider">Drag files or Click to Upload</p>
                                 </div>
                             </div>
+                            
+                            <InputError :message="formSubmission.errors.files" class="mt-2 text-center" />
                         </div>
                         
                         <div v-if="formSubmission.files.length" class="grid grid-cols-1 sm:grid-cols-2 gap-2">

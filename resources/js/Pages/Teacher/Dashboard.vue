@@ -13,6 +13,20 @@ const props = defineProps({
     <Head title="Overview" />
 
     <AuthenticatedLayout>
+        <div v-if="stats && stats.rejectedMaterials > 0" class="max-w-7xl mx-auto px-4 sm:px-6 mb-4">
+            <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded shadow-sm">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                    </div>
+                    <div class="ml-3">
+                        <p class="text-sm font-bold text-red-700">
+                            Action Required: You have {{ stats.rejectedMaterials }} material(s) rejected by the Administrator. Please update and resubmit.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
         
         <div class="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-4 md:p-5 text-white shadow-sm mb-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
             <div class="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 bg-blue-500 opacity-20 rounded-full blur-2xl pointer-events-none"></div>
@@ -34,14 +48,14 @@ const props = defineProps({
                     <svg class="w-4 h-4 text-emerald-400 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                     <div>
                         <p class="text-[9px] uppercase font-bold text-slate-400 tracking-widest leading-none mb-0.5">Students</p>
-                        <p class="text-sm font-black leading-none">{{ stats.total_students }}</p>
+                        <p class="text-sm font-black leading-none">{{ stats.total_students || 0 }}</p>
                     </div>
                 </div>
                 <div class="bg-white/5 backdrop-blur-sm border border-white/10 px-3 py-2 rounded-lg shadow-sm flex items-center gap-3 flex-1 md:flex-none">
                     <svg class="w-4 h-4 text-amber-400 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                     <div>
                         <p class="text-[9px] uppercase font-bold text-slate-400 tracking-widest leading-none mb-0.5">To Grade</p>
-                        <p class="text-sm font-black leading-none text-amber-400">{{ stats.pending_submissions }}</p>
+                        <p class="text-sm font-black leading-none text-amber-400">{{ stats.pending_submissions || 0 }}</p>
                     </div>
                 </div>
             </div>
@@ -100,10 +114,10 @@ const props = defineProps({
                     </div>
                     
                     <div v-if="upcoming_assignments.length > 0" class="divide-y divide-slate-100 dark:divide-slate-700">
-                        <div v-for="task in upcoming_assignments" :key="task.id" class="p-3 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors flex items-center justify-between gap-3 group">
+                        <Link v-for="task in upcoming_assignments" :key="task.id" :href="route('teacher.assignments.show', task.id)" class="p-3 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors flex items-center justify-between gap-3 group">
                             
                             <div class="flex items-center gap-3 min-w-0">
-                                <div class="w-8 h-8 rounded bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 flex flex-col items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700">
+                                <div class="w-8 h-8 rounded bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 flex flex-col items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 group-hover:border-blue-300 dark:group-hover:border-blue-700 group-hover:bg-blue-50 dark:group-hover:bg-blue-900/30 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                     <span class="text-[8px] font-black uppercase tracking-widest leading-none">{{ new Date(task.due_date).toLocaleString('default', { month: 'short' }) }}</span>
                                     <span class="text-xs font-black leading-none mt-0.5">{{ new Date(task.due_date).getDate() }}</span>
                                 </div>
@@ -113,7 +127,9 @@ const props = defineProps({
                                     <p class="text-[10px] font-medium text-slate-500 truncate mt-0.5">{{ task.course.title }}</p>
                                 </div>
                             </div>
-                        </div>
+
+                            <svg class="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-blue-500 transition-transform group-hover:translate-x-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </Link>
                     </div>
                     <div v-else class="p-6 text-center text-[10px] text-slate-500 font-medium">No upcoming deadlines scheduled.</div>
                 </div>
@@ -149,7 +165,7 @@ const props = defineProps({
                             <div class="bg-emerald-100 dark:bg-emerald-900/40 p-1.5 rounded text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white transition">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
                             </div>
-                            <span class="text-xs font-bold text-slate-700 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-300">Manage Active Courses ({{ stats.active_courses }})</span>
+                            <span class="text-xs font-bold text-slate-700 dark:text-slate-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-300">Manage Active Courses ({{ stats.active_courses || 0 }})</span>
                         </Link>
                     </div>
                 </div>

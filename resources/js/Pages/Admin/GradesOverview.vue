@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import { Download, Search, FileSpreadsheet } from 'lucide-vue-next';
+import * as XLSX from 'xlsx';
 
 const props = defineProps({
     courses: Array
@@ -34,45 +35,86 @@ const formatYearLevel = (level) => {
     return levels[level] || level;
 };
 
-// FULLY DETAILED EXCEL/CSV EXPORT
-const downloadCSV = () => {
-    let csvContent = "SYSTEM-WIDE GRADES REPORT\n";
-    csvContent += `Generated on: ${new Date().toLocaleDateString()}\n\n`;
+// HELPER FORMULA: (Raw Score / Highest Possible Score) * 100
+const calculatePS = (score, max) => {
+    if (!max || max === 0) return '0%';
+    return ((score / max) * 100).toFixed(1) + '%';
+};
+
+// FULLY FORMATTED .XLSX EXCEL EXPORT WITH PS%
+const downloadExcel = () => {
+    const wb = XLSX.utils.book_new();
 
     filteredCourses.value.forEach(course => {
-        csvContent += `=================================================\n`;
-        csvContent += `COURSE DETAILS\n`;
-        csvContent += `=================================================\n`;
-        csvContent += `Course Name:,"${course.title}"\n`;
-        csvContent += `Course Code:,"${course.enrollment_code}"\n`;
-        csvContent += `Teacher:,"${course.teacher}"\n`;
-        csvContent += `Year Level:,"${formatYearLevel(course.difficulty_level)}"\n`;
-        csvContent += `Max Points:,Total: ${course.total_points} | Assign: ${course.max_assignment} | Act: ${course.max_activity} | PT: ${course.max_pt}\n`;
-        csvContent += `Total Enrolled:,${course.students.length}\n`;
-        csvContent += `-------------------------------------------------\n\n`;
+        const wsData = [
+            ['', '', '', 'OFFICIAL CLASS RECORD'], // Row 1
+            [], // Row 2 (Empty for spacing)
+            ['Course:', course.title, '', '', 'Teacher:', course.teacher], // Row 3
+            [], // Row 4 (Empty for spacing)
+            
+            // Row 5: DepEd Aligned Headers
+            [
+                'Name of Student', 
+                'Assignments (Raw)', 'Assign. PS (%)', 
+                'Activities (Raw)', 'Activity PS (%)', 
+                'Performance Tasks (Raw)', 'PT PS (%)', 
+                'Initial Grade (Raw)', 'Quarterly Grade (%)'
+            ],
+            
+            // Row 6: Highest Possible Scores
+            [
+                'HIGHEST POSSIBLE SCORE', 
+                course.max_assignment, '100%', 
+                course.max_activity, '100%', 
+                course.max_pt, '100%', 
+                course.total_points, '100%'
+            ]
+        ];
 
-        if (course.students.length === 0) {
-            csvContent += `No students are currently enrolled in this course.\n\n\n\n`;
-        } else {
-            csvContent += `Rank,Student Name,Email Address,Assignments (${course.max_assignment}),Activities (${course.max_activity}),Performance Tasks (${course.max_pt}),Total Score (${course.total_points}),Percentage\n`;
-            
-            course.students.forEach((student, index) => {
-                csvContent += `${index + 1},"${student.name}","${student.email}",${student.assignment_score},${student.activity_score},${student.pt_score},${student.total_score},"${student.percentage}%"\n`;
+        // Row 7+: Add Students and Calculate PS dynamically
+        if (course.students && course.students.length > 0) {
+            course.students.forEach(student => {
+                wsData.push([
+                    student.name,
+                    student.assignment_score,
+                    calculatePS(student.assignment_score, course.max_assignment),
+                    student.activity_score,
+                    calculatePS(student.activity_score, course.max_activity),
+                    student.pt_score,
+                    calculatePS(student.pt_score, course.max_pt),
+                    student.total_score,
+                    `${student.percentage}%`
+                ]);
             });
-            
-            csvContent += `\n\n\n`;
+        } else {
+            wsData.push(['No students enrolled.']);
         }
+
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+        // Set exact column widths so text is NEVER cut off and PS columns fit nicely
+        ws['!cols'] = [
+            { wch: 35 }, // A: Name of Student
+            { wch: 18 }, // B: Assign Raw
+            { wch: 15 }, // C: Assign PS
+            { wch: 18 }, // D: Activity Raw
+            { wch: 15 }, // E: Activity PS
+            { wch: 24 }, // F: PT Raw
+            { wch: 15 }, // G: PT PS
+            { wch: 20 }, // H: Initial Raw
+            { wch: 20 }  // I: Quarterly %
+        ];
+
+        let safeSheetName = course.title.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
     });
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `LMS_Detailed_Grades_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    let fileName = "System_Grades_Report.xlsx";
+    if (selectedCourseId.value !== 'all' && filteredCourses.value.length > 0) {
+        fileName = `${filteredCourses.value[0].title.replace(/\s+/g, '_')}_Grades.xlsx`;
+    }
+
+    XLSX.writeFile(wb, fileName);
 };
 </script>
 
@@ -92,14 +134,13 @@ const downloadCSV = () => {
                 </div>
 
                 <div class="flex items-center gap-3">
-                    <button @click="downloadCSV" class="w-full sm:w-auto justify-center bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-all flex items-center gap-1.5 h-full">
+                    <button @click="downloadExcel" class="w-full sm:w-auto justify-center bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-all flex items-center gap-1.5 h-full">
                         <Download class="w-4 h-4 shrink-0" />
-                        Export to CSV
+                        Export to Excel
                     </button>
                 </div>
             </div>
 
-            <!-- FILTERS: Full width on mobile, side-by-side on desktop -->
             <div class="flex flex-col sm:flex-row gap-3 mb-4">
                 <div class="relative flex-1">
                     <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -122,7 +163,6 @@ const downloadCSV = () => {
 
                 <div v-for="course in filteredCourses" :key="course.id" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                     
-                    <!-- Course Header -->
                     <div class="bg-slate-50 dark:bg-slate-900/50 p-2.5 px-3 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2">
                         <div class="flex items-center gap-2 min-w-0">
                             <h2 class="font-black text-[11px] sm:text-xs text-slate-900 dark:text-white uppercase tracking-tight truncate">{{ course.title }}</h2>
@@ -135,7 +175,6 @@ const downloadCSV = () => {
                     </div>
 
                     <div v-if="course.students.length > 0">
-                        <!-- DESKTOP VIEW: Standard Horizontal Table -->
                         <div class="hidden md:block overflow-x-auto custom-scrollbar">
                             <table class="w-full text-left text-[9px] sm:text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
                                 <thead class="uppercase font-black text-slate-400 bg-slate-50/30 dark:bg-slate-900/20 border-b border-slate-100 dark:border-slate-700/50">
@@ -145,8 +184,8 @@ const downloadCSV = () => {
                                         <th class="px-2 sm:px-3 py-1.5 text-right bg-blue-50/30 dark:bg-blue-900/10">Assign. <span class="text-blue-400">({{ course.max_assignment }})</span></th>
                                         <th class="px-2 sm:px-3 py-1.5 text-right bg-purple-50/30 dark:bg-purple-900/10">Act. <span class="text-purple-400">({{ course.max_activity }})</span></th>
                                         <th class="px-2 sm:px-3 py-1.5 text-right bg-orange-50/30 dark:bg-orange-900/10">P.T. <span class="text-orange-400">({{ course.max_pt }})</span></th>
-                                        <th class="px-2 sm:px-3 py-1.5 text-right border-l border-slate-100 dark:border-slate-700">Total <span class="text-slate-500">({{ course.total_points }})</span></th>
-                                        <th class="px-2 sm:px-3 py-1.5 text-right">%</th>
+                                        <th class="px-2 sm:px-3 py-1.5 text-right border-l border-slate-100 dark:border-slate-700">Total raw score <span class="text-slate-500">({{ course.total_points }})</span></th>
+                                        <th class="px-2 sm:px-3 py-1.5 text-right">total %</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-50 dark:divide-slate-700/30">
@@ -163,8 +202,8 @@ const downloadCSV = () => {
                                             <span class="text-[9px] font-black px-1.5 py-0.5 rounded"
                                                 :class="{
                                                     'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400': student.percentage >= 85,
-                                                    'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400': student.percentage >= 60 && student.percentage < 85,
-                                                    'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': student.percentage < 60
+                                                    'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400': student.percentage >= 75 && student.percentage < 85,
+                                                    'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': student.percentage < 75
                                                 }">
                                                 {{ student.percentage }}%
                                             </span>
@@ -174,7 +213,6 @@ const downloadCSV = () => {
                             </table>
                         </div>
 
-                        <!-- MOBILE VIEW: Ultra Compact Vertical List -->
                         <div class="md:hidden flex flex-col divide-y divide-slate-50 dark:divide-slate-700/30">
                             <div v-for="(student, index) in course.students" :key="student.id" class="p-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition flex flex-col gap-1.5">
                                 <div class="flex justify-between items-center gap-2">
@@ -185,8 +223,8 @@ const downloadCSV = () => {
                                     <span class="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" 
                                         :class="{
                                             'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400': student.percentage >= 85,
-                                            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400': student.percentage >= 60 && student.percentage < 85,
-                                            'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': student.percentage < 60
+                                            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400': student.percentage >= 75 && student.percentage < 85,
+                                            'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': student.percentage < 75
                                         }">
                                         {{ student.percentage }}%
                                     </span>
@@ -201,7 +239,6 @@ const downloadCSV = () => {
                                 </div>
                             </div>
                         </div>
-
                     </div>
                     
                     <div v-else class="p-4 text-center text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">

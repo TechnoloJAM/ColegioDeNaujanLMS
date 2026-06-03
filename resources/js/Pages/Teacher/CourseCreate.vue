@@ -27,6 +27,15 @@ const cropper = reactive({
 });
 const imageRef = ref(null);
 
+// 🛡️ CRITICAL FIX 1: Use a Vue Ref to safely select the hidden file input
+const thumbnailInput = ref(null);
+
+const triggerFileInput = () => {
+    if (thumbnailInput.value) {
+        thumbnailInput.value.click();
+    }
+};
+
 // 1. Handle File Select -> Open Modal
 const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -37,7 +46,10 @@ const handleFileChange = (event) => {
         cropper.y = 0;
         showCropModal.value = true;
     }
-    event.target.value = '';
+    // Reset the input so the user can re-select the same file if they cancel
+    if (event.target) {
+        event.target.value = '';
+    }
 };
 
 // 2. Cropper Mouse Events (Drag Logic)
@@ -86,8 +98,12 @@ const applyCrop = () => {
     }, 'image/jpeg', 0.9);
 };
 
+// 🛡️ CRITICAL FIX 2: Ensure the payload is sent as FormData so the cropped image actually uploads
 const submit = () => {
-    form.post(route('teacher.courses.store'));
+    form.post(route('teacher.courses.store'), {
+        forceFormData: true, 
+        preserveScroll: true
+    });
 };
 </script>
 
@@ -125,18 +141,17 @@ const submit = () => {
                         <div v-if="croppedPreview" class="mb-3 relative w-full sm:w-2/3 md:w-1/2 aspect-video bg-slate-200 dark:bg-slate-900 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 group shadow-sm">
                             <img :src="croppedPreview" class="w-full h-full object-cover" />
                             <div class="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer backdrop-blur-sm"
-                                 @click="document.getElementById('course_thumbnail').click()">
-                                <ImagePlus class="w-6 h-6 text-white mb-1" />
+                                 @click="triggerFileInput"> <ImagePlus class="w-6 h-6 text-white mb-1" />
                                 <span class="text-white text-[9px] font-black uppercase tracking-widest">Change Image</span>
                             </div>
                         </div>
 
-                        <div v-else @click="document.getElementById('course_thumbnail').click()" class="w-full sm:w-2/3 md:w-1/2 aspect-video bg-slate-50 dark:bg-slate-900/50 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 dark:hover:bg-slate-800 transition-all group mb-3">
-                            <ImagePlus class="w-6 h-6 text-slate-400 group-hover:text-blue-500 mb-2 transition-colors" />
+                        <div v-else @click="triggerFileInput" class="w-full sm:w-2/3 md:w-1/2 aspect-video bg-slate-50 dark:bg-slate-900/50 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 dark:hover:bg-slate-800 transition-all group mb-3"> <ImagePlus class="w-6 h-6 text-slate-400 group-hover:text-blue-500 mb-2 transition-colors" />
                             <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest group-hover:text-blue-600 transition-colors">Upload Cover</span>
                         </div>
 
                         <input 
+                            ref="thumbnailInput"
                             id="course_thumbnail"
                             type="file" 
                             @change="handleFileChange"

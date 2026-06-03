@@ -2,8 +2,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
-import { FilePlus2, ChevronLeft, Paperclip } from 'lucide-vue-next';
-import { computed } from 'vue'; // Added import
+import { FilePlus2, ChevronLeft, Paperclip, CheckCircle } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
     course: Object,
@@ -21,6 +21,10 @@ const form = useForm({
     files: [],
 });
 
+// Refs for UI state
+const showSuccess = ref(false);
+const fileInput = ref(null);
+
 // Calculate current local datetime for the calendar restrictions
 const minDateTime = computed(() => {
     const now = new Date();
@@ -37,7 +41,26 @@ const goBack = () => {
 };
 
 const submit = () => {
-    form.post(route('teacher.assignments.store', props.course.id));
+    form.post(route('teacher.assignments.store', props.course.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            // 1. Reset the form data back to default
+            form.reset();
+            
+            // 2. Clear the physical file input element in the browser
+            if (fileInput.value) {
+                fileInput.value.value = '';
+            }
+            
+            // 3. Show success message
+            showSuccess.value = true;
+            
+            // 4. Hide success message after 3.5 seconds
+            setTimeout(() => {
+                showSuccess.value = false;
+            }, 3500);
+        }
+    });
 };
 </script>
 
@@ -66,6 +89,20 @@ const submit = () => {
 
         <div class="max-w-2xl mx-auto pb-8">
             <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 sm:p-6">
+                
+                <transition 
+                    enter-active-class="transition ease-out duration-300" 
+                    enter-from-class="opacity-0 -translate-y-2" 
+                    enter-to-class="opacity-100 translate-y-0"
+                    leave-active-class="transition ease-in duration-200" 
+                    leave-from-class="opacity-100 translate-y-0" 
+                    leave-to-class="opacity-0 -translate-y-2"
+                >
+                    <div v-if="showSuccess" class="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+                        <CheckCircle class="w-4 h-4 shrink-0" />
+                        <span class="text-[10px] font-black uppercase tracking-widest">Assignment created successfully!</span>
+                    </div>
+                </transition>
                 
                 <form @submit.prevent="submit" class="space-y-4">
                     
@@ -115,7 +152,7 @@ const submit = () => {
 
                     <div>
                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Attachments (Optional)</label>
-                        <input type="file" multiple @change="e => form.files = Array.from(e.target.files)" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 cursor-pointer bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 transition shadow-sm" />
+                        <input type="file" ref="fileInput" multiple @change="e => form.files = Array.from(e.target.files)" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 cursor-pointer bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 transition shadow-sm" />
                         
                         <div v-if="form.files && form.files.length > 0" class="mt-2 space-y-1.5 max-h-28 overflow-y-auto custom-scrollbar">
                             <div v-for="(file, index) in form.files" :key="index" class="text-[9px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800">

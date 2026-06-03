@@ -21,7 +21,6 @@ class StudentController extends Controller
             ->where('status', 'approved')
             ->pluck('course_id');
             
-        // Calculate PENDING COUNT (Fixed Error)
         $pendingCount = Assignment::whereIn('course_id', $enrolledCourseIds)
             ->where(function ($q) {
                 $q->where('closing_date', '>=', now())
@@ -32,7 +31,6 @@ class StudentController extends Controller
             })
             ->count();
 
-        // PURE LOGIC RECOMMENDATION ENGINE
         $hardCodedRecommendations = [];
         
         foreach ($enrolledCourseIds as $courseId) {
@@ -52,7 +50,6 @@ class StudentController extends Controller
             
             $average = ($total > 0) ? ($earned / $total) * 100 : 100;
 
-            // Rule-based logic (Hard-coded stability for presentation)
             if ($average < 75) {
                 $hardCodedRecommendations[] = [
                     'id' => $courseId,
@@ -96,7 +93,7 @@ class StudentController extends Controller
             'upcoming' => $upcoming,
             'announcements' => $announcements,
             'recentGrades' => $recentGrades,
-            'recommendations' => $hardCodedRecommendations // Passes the logic directly to the view
+            'recommendations' => $hardCodedRecommendations
         ]);
     }
 
@@ -121,11 +118,14 @@ class StudentController extends Controller
             return back()->withErrors(['enrollment_code' => 'This class is currently unavailable or the code is invalid.']);
         }
 
-        $alreadyEnrolled = Enrollment::where('user_id', Auth::id())->where('course_id', $course->id)->first();
-        if ($alreadyEnrolled) return back()->withErrors(['enrollment_code' => 'You are already in this class or waiting for approval.']);
+        $user = Auth::user();
+
+        if ($user->enrolledCourses()->where('course_id', $course->id)->exists()) {
+            return back()->withErrors(['enrollment_code' => 'You are already enrolled (or pending approval) in this class!']);
+        }
 
         Enrollment::create([
-            'user_id' => Auth::id(), 
+            'user_id' => $user->id, 
             'course_id' => $course->id, 
             'status' => 'pending',
             'enrolled_at' => now(),
@@ -201,27 +201,24 @@ class StudentController extends Controller
             return back()->with('error', 'The hard deadline has passed. Submissions are locked.');
         }
 
+        // 1. Exact same validation as the Teacher side
         $request->validate([
             'text_content' => 'nullable|string',
-            'files.*' => 'nullable|file|max:15360'
+            'files.*' => 'nullable|file|max:15360' 
         ]);
 
-        if (empty($request->text_content) && !$request->hasFile('files')) {
-            return back()->withErrors(['files' => 'You must provide a text response or upload a file.']);
+        $hasFiles = $request->hasFile('files');
+        $hasText = !empty(trim($request->text_content ?? ''));
+
+        if (!$hasText && !$hasFiles) {
+            return back()->withErrors(['files' => 'Please write an answer or attach a file.']);
         }
 
         $existingSubmission = Submission::where('assignment_id', $assignment->id)->where('user_id', Auth::id())->first();
 
+        // 2. Exact same file processing as the Teacher side
         $filePaths = [];
-        if ($request->hasFile('files')) {
-            if ($existingSubmission && $existingSubmission->file_paths) {
-                $oldPaths = json_decode($existingSubmission->file_paths, true);
-                if (is_array($oldPaths)) {
-                    foreach ($oldPaths as $oldPath) {
-                        Storage::disk('public')->delete($oldPath);
-                    }
-                }
-            }
+        if ($hasFiles) {
             foreach ($request->file('files') as $file) {
                 $filePaths[] = $file->store('submissions', 'public');
             }
@@ -229,6 +226,7 @@ class StudentController extends Controller
             $filePaths = json_decode($existingSubmission->file_paths, true) ?? [];
         }
 
+        // 3. Save
         Submission::updateOrCreate(
             ['assignment_id' => $assignment->id, 'user_id' => Auth::id()],
             [
@@ -237,7 +235,7 @@ class StudentController extends Controller
             ]
         );
 
-        return back()->with('success', 'Assignment submitted successfully!');
+        return back()->with('success', 'Task submitted successfully!');
     }
 
     public function unsubmit(Assignment $assignment)

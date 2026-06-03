@@ -94,10 +94,11 @@ class AdminDashboardController extends Controller
     public function users()
     {
         return Inertia::render('Admin/UserManagement', [
+            // 🛡️ CRITICAL FIX: Changed ->get() to ->paginate(15) to prevent browser crashing
             'users' => User::with('enrolledCourses:id,title')
                 ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at', 'contact_number', 'avatar')
                 ->orderBy('name')
-                ->get(),
+                ->paginate(15),
             'courses' => \App\Models\Course::select('id', 'title')->orderBy('title')->get()
         ]);
     }

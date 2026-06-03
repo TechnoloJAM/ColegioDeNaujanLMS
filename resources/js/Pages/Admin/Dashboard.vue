@@ -1,15 +1,15 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed } from 'vue'; // Removed onMounted, onUnmounted
 import { Line, Doughnut } from 'vue-chartjs';
 import { 
     Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, 
     Title, Tooltip, Legend, ArcElement, Filler 
 } from 'chart.js';
 import { 
-    Users, BookOpen, Clock, AlertTriangle, ShieldCheck, TrendingUp, ChevronLeft, ChevronRight
-} from 'lucide-vue-next';
+    Users, BookOpen, Clock, AlertTriangle, ShieldCheck, TrendingUp, ChevronLeft, ChevronRight, RefreshCw
+} from 'lucide-vue-next'; // Added RefreshCw
 
 ChartJS.register(
     CategoryScale, LinearScale, PointElement, LineElement, 
@@ -46,24 +46,23 @@ const navigateMonth = (direction) => {
     });
 };
 
-// REAL-TIME UPDATES
-let pollInterval;
-onMounted(() => {
-    pollInterval = setInterval(() => {
-        router.reload({ 
-            data: { month: props.currentMonth, year: props.currentYear },
-            only: ['stats', 'chartData', 'demographics', 'recentCourses'], 
-            preserveScroll: true, 
-            preserveState: true 
-        });
-    }, 10000);
-});
+// --- NEW: MANUAL REFRESH LOGIC ---
+const isRefreshing = ref(false);
 
-onUnmounted(() => {
-    clearInterval(pollInterval);
-});
+const refreshData = () => {
+    isRefreshing.value = true;
+    router.reload({ 
+        only: ['stats', 'chartData', 'demographics', 'recentCourses'], 
+        preserveScroll: true, 
+        preserveState: true,
+        onFinish: () => {
+            // Add a tiny delay so the user can see the spin animation finish
+            setTimeout(() => { isRefreshing.value = false; }, 500);
+        }
+    });
+};
 
-// BULLETPROOF CHART COMPUTED PROPERTY (Now tracks daily spikes)
+// BULLETPROOF CHART COMPUTED PROPERTY
 const lineChartData = computed(() => {
     const safeData = props.chartData || props.enrollmentTrend || {};
     
@@ -81,7 +80,7 @@ const lineChartData = computed(() => {
                 pointHoverRadius: 4,
                 borderWidth: 1.5, 
                 fill: false,
-                tension: 0.3, // Lower tension makes daily spikes look sharper and "normal"
+                tension: 0.3, 
                 data: safeData?.total || [],
             },
             {
@@ -149,22 +148,17 @@ const lineChartOptions = {
     scales: {
         y: { 
             beginAtZero: true, 
-            ticks: { precision: 0, color: '#94a3b8', font: { size: 8 }, stepSize: 1 }, // Ensures whole numbers only
+            ticks: { precision: 0, color: '#94a3b8', font: { size: 8 }, stepSize: 1 }, 
             grid: { color: '#f1f5f9', drawBorder: false }
         },
         x: { 
-            ticks: { 
-                color: '#94a3b8',
-                font: { size: 7 },
-                maxTicksLimit: 10 
-            }, 
+            ticks: { color: '#94a3b8', font: { size: 7 }, maxTicksLimit: 10 }, 
             grid: { display: false, drawBorder: false } 
         }
     },
     interaction: { intersect: false, mode: 'index' }
 };
 
-// Compact Doughnut Chart Configuration
 const donutData = computed(() => ({
     labels: props.demographics?.labels || [],
     datasets: [{
@@ -192,10 +186,21 @@ const donutOptions = {
                     <ShieldCheck class="w-4 h-4 text-blue-600" /> Admin Overview
                 </h1>
                 
-                <Link v-if="stats?.pendingMaterials > 0" :href="route('admin.materials')" class="flex items-center gap-1 bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-200 shadow-sm transition hover:bg-amber-100 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-400 shrink-0">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                    <span class="text-[7px] sm:text-[9px] font-black uppercase tracking-widest">{{ stats.pendingMaterials }} Reviews</span>
-                </Link>
+                <div class="flex items-center gap-2">
+                    <button 
+                        @click="refreshData" 
+                        :disabled="isRefreshing"
+                        class="flex items-center gap-1.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded border border-slate-200 dark:border-slate-700 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-700 text-[9px] font-black uppercase tracking-widest disabled:opacity-50"
+                    >
+                        <RefreshCw class="w-3 h-3" :class="{'animate-spin text-blue-500': isRefreshing}" />
+                        {{ isRefreshing ? 'Updating...' : 'Refresh' }}
+                    </button>
+
+                    <Link v-if="stats?.pendingMaterials > 0" :href="route('admin.materials')" class="flex items-center gap-1 bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-200 shadow-sm transition hover:bg-amber-100 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-400 shrink-0">
+                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span class="text-[7px] sm:text-[9px] font-black uppercase tracking-widest">{{ stats.pendingMaterials }} Reviews</span>
+                    </Link>
+                </div>
             </div>
 
             <div v-if="stats" class="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-3 px-2 sm:px-0">
