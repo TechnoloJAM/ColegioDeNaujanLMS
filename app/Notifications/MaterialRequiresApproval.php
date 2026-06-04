@@ -6,7 +6,7 @@ use App\Models\Lesson;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
-class MaterialApproved extends Notification
+class MaterialRequiresApproval extends Notification
 {
     use Queueable;
 
@@ -25,14 +25,17 @@ class MaterialApproved extends Notification
     public function toDatabase(object $notifiable): array
     {
         return [
-            'title' => 'Material Approved',
-            'message' => 'Your material "' . $this->lesson->title . '" has been approved by an admin.',
-            'url' => route('teacher.courses.show', $this->lesson->course_id),
-            'icon' => 'check-circle',
-            'color' => 'text-emerald-500',
+            'title' => 'Pending Material Approval',
+            'message' => "{$this->lesson->course->teacher->name} uploaded '{$this->lesson->title}' for review.",
+            
+            // FIX: Changed 'admin.materials.index' to 'admin.materials' to perfectly match web.php
+            'url' => route('admin.materials'), 
+            
+            'icon' => 'shield-exclamation',
+            'color' => 'text-orange-500',
             // Smart Attributes
             'lesson_id' => $this->lesson->id,
-            'urgency' => 'normal'
+            'urgency' => 'high'
         ];
     }
 }

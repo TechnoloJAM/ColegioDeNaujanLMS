@@ -35,6 +35,12 @@ Route::middleware('guest')->group(function () {
         ->name('password.store');
 });
 
+// THE FIX: Placed OUTSIDE the auth middleware so it works from any email client!
+// The 'signed' middleware ensures the URL cannot be tampered with.
+Route::get('verify-email/{id}/{hash}', [VerifyEmailController::class, '__invoke'])
+    ->middleware(['signed', 'throttle:6,1'])
+    ->name('verification.verify');
+
 Route::middleware('auth')->group(function () {
     Route::get('verify-email', EmailVerificationPromptController::class)
         ->name('verification.notice');
@@ -53,8 +59,3 @@ Route::middleware('auth')->group(function () {
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
 });
-
-// NEW PLACEMENT: Moved outside 'auth' middleware so anyone can click the link
-Route::get('verify-email/{id}/{hash}', [VerifyEmailController::class, '__invoke'])
-    ->middleware(['signed', 'throttle:6,1'])
-    ->name('verification.verify');

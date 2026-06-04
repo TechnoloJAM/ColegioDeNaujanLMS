@@ -11,10 +11,11 @@ return new class extends Migration
         Schema::create('submissions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('assignment_id')->constrained()->onDelete('cascade');
-            $table->foreignId('student_id')->constrained('users')->onDelete('cascade');
             
-            $table->text('file_paths')->nullable(); // Make this nullable
-            $table->text('text_content')->nullable(); // Add text content
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            
+            $table->text('file_paths')->nullable(); 
+            $table->text('text_content')->nullable(); 
             $table->integer('grade')->nullable(); 
             $table->text('feedback')->nullable();
             $table->timestamp('submitted_at')->useCurrent();

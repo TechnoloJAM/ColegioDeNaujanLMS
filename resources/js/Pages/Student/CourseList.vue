@@ -35,7 +35,7 @@ const displayedCourses = computed(() => {
 });
 
 const showJoinModal = ref(false);
-const form = useForm({ code: '' });
+const form = useForm({ enrollment_code: '' });
 const imageErrors = ref({});
 
 const handleImageError = (id) => { imageErrors.value[id] = true; };
@@ -184,8 +184,8 @@ const formatYearLevel = (level) => {
                 <form @submit.prevent="submitJoin" class="space-y-4">
                     <div>
                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1.5">Class Code *</label>
-                        <input v-model="form.code" type="text" class="w-full rounded-md bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-center text-lg font-mono tracking-widest uppercase py-3 focus:ring-2 focus:ring-blue-500 shadow-sm transition" placeholder="A1B2C3" maxlength="6" required autofocus />
-                        <InputError class="mt-1 text-center" :message="form.errors.code" />
+                        <input v-model="form.enrollment_code" type="text" class="w-full rounded-md bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-center text-lg font-mono tracking-widest uppercase py-3 focus:ring-2 focus:ring-blue-500 shadow-sm transition" placeholder="A1B2C3" maxlength="6" required autofocus />
+                        <InputError class="mt-1 text-center" :message="form.errors.enrollment_code" />
                     </div>
                     <p class="text-[10px] font-bold text-slate-400 text-center uppercase tracking-widest">Ask your teacher for the 6-character code.</p>
                     <div class="flex justify-end gap-2 pt-4 mt-2 border-t border-slate-100 dark:border-slate-700">

@@ -6,7 +6,7 @@ use App\Models\Assignment;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 
-class NewAssignmentPosted extends Notification
+class AssignmentDeadlineApproaching extends Notification
 {
     use Queueable;
 
@@ -25,14 +25,14 @@ class NewAssignmentPosted extends Notification
     public function toDatabase(object $notifiable): array
     {
         return [
-            'title' => 'New Assignment',
-            'message' => "A new assignment '{$this->assignment->title}' was posted in {$this->assignment->course->title}.",
+            'title' => 'Deadline Approaching!',
+            'message' => "Your assignment '{$this->assignment->title}' in {$this->assignment->course->title} is due in 24 hours.",
             'url' => route('student.courses.show', ['course' => $this->assignment->course_id, 'tab' => 'assignments']),
-            'icon' => 'clipboard-document',
-            'color' => 'text-blue-500',
+            'icon' => 'clock',
+            'color' => 'text-red-500',
             // Smart Attributes
             'assignment_id' => $this->assignment->id,
-            'urgency' => 'normal' 
+            'urgency' => 'high' 
         ];
     }
 }

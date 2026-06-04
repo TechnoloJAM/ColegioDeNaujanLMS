@@ -13,15 +13,15 @@ return new class extends Migration
     {
         Schema::create('lessons', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('course_id')->constrained()->onDelete('cascade'); // Connects to Course
+            $table->foreignId('course_id')->constrained()->onDelete('cascade');
             
             $table->string('title');
-            $table->longText('content')->nullable(); // The text for the AI Chatbot to read
+            $table->longText('content')->nullable(); 
             $table->string('video_url')->nullable(); 
             $table->string('attachment_path')->nullable(); 
             
-            $table->json('tags')->nullable(); // Important: ["loops", "variables"] for Recommendations
-            $table->integer('priority_order')->default(0); // Lesson 1, Lesson 2...
+            $table->longText('tags')->nullable(); 
+            $table->integer('priority_order')->default(0); 
             $table->timestamps();
         });
     }

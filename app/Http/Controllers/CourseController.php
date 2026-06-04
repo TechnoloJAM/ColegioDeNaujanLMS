@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Course;
 use App\Models\User;
+use App\Models\Submission;
 use App\Notifications\EnrollmentApproved;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -12,25 +13,16 @@ use Illuminate\Support\Facades\Storage;
 
 class CourseController extends Controller
 {
-    // 1. Show the "Create Course" Form
-    public function create()
-    {
-        return Inertia::render('Teacher/CourseCreate');
-    }
+    public function create() { return Inertia::render('Teacher/CourseCreate'); }
 
-    // Save the new Course to the Database
     private function generateUniqueCode()
     {
-        do {
-            $code = strtoupper(substr(md5(uniqid()), 0, 6));
-        } while (Course::where('enrollment_code', $code)->exists());
-
+        do { $code = strtoupper(substr(md5(uniqid()), 0, 6)); } while (Course::where('enrollment_code', $code)->exists());
         return $code;
     }
 
     public function store(Request $request)
     {
-        // Added 'final' to the difficulty_level to represent 4th year
         $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -38,7 +30,6 @@ class CourseController extends Controller
             'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048', 
         ]);
 
-        // Handle File Upload
         $thumbnailPath = null;
         if ($request->hasFile('thumbnail')) {
             $thumbnailPath = $request->file('thumbnail')->store('thumbnails', 'public');
@@ -51,7 +42,9 @@ class CourseController extends Controller
             'description' => $request->description,
             'difficulty_level' => $request->difficulty_level,
             'thumbnail' => $thumbnailPath ? '/storage/' . $thumbnailPath : null,
-            'is_published' => false,
+            
+            // FIX: Changed from false to true so courses are LIVE by default!
+            'is_published' => true, 
         ]);
 
         return redirect()->route('teacher.courses.index');
@@ -59,99 +52,55 @@ class CourseController extends Controller
 
     public function index()
     {
-        $courses = Course::where('teacher_id', Auth::id())
-                        ->orderBy('created_at', 'desc')
-                        ->get();
-
-        return Inertia::render('Teacher/CourseList', [
-            'courses' => $courses
-        ]);
+        $courses = Course::where('teacher_id', Auth::id())->orderBy('created_at', 'desc')->get();
+        return Inertia::render('Teacher/CourseList', ['courses' => $courses]);
     }
     
-    // GOD MODE ENABLED: Admins bypass ownership checks
     public function show(Course $course)
     {
         $user = Auth::user();
 
-        if ($user->role === 'student') {
-            $enrollment = $user->enrolledCourses()->where('course_id', $course->id)->first();
-            if (!$enrollment || $enrollment->pivot->status !== 'approved') {
-                abort(403, 'Not enrolled or pending approval.');
-            }
-        } 
-        // If user is a teacher (and NOT an admin), check course ownership
-        elseif ($user->role === 'teacher' && $course->teacher_id !== $user->id) {
-            abort(403, 'Unauthorized access to another teacher\'s course.');
-        }
-        // If user is admin, they bypass all checks automatically!
+        if ($user->role === 'student') abort(403, 'Students must access courses through the student dashboard.');
+        if ($user->role === 'teacher' && $course->teacher_id !== $user->id) abort(403, 'Unauthorized access.');
 
         $course->load([
             'assignments', 
-            'lessons' => function ($query) use ($user) {
-                if ($user->role === 'student') {
-                    $query->where('approval_status', 'approved');
-                }
-            }, 
+            'lessons', 
             'announcements.user',
             'announcements.comments.user',
             'enrollments.user' 
         ]); 
 
-        if ($user->role === 'student') {
-            return Inertia::render('Student/CourseShow', ['course' => $course]);
-        }
-        
         return Inertia::render('Teacher/CourseManage', ['course' => $course]);
     }
 
     public function approveStudent(Request $request, Course $course, $userId)
     {
-        // Allow course owner OR admin
         if ($course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') abort(403);
-
         $enrollment = $course->enrollments()->where('user_id', $userId)->firstOrFail();
         $enrollment->update(['status' => 'approved']);
-
-        $student = User::findOrFail($userId);
-        $student->notify(new EnrollmentApproved($course));
-
+        User::findOrFail($userId)->notify(new EnrollmentApproved($course));
         return back()->with('success', 'Student approved and notified!');
     }
 
     public function removeStudent(Request $request, Course $course, $userId)
     {
-        // Allow course owner OR admin
         if ($course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') abort(403);
-
-        $enrollment = $course->enrollments()->where('user_id', $userId)->firstOrFail();
-        $enrollment->delete(); 
-
+        $course->enrollments()->where('user_id', $userId)->delete(); 
         return back()->with('success', 'Student removed from class.');
     }
 
     public function edit(Request $request, Course $course)
     {
-        // Allow course owner OR admin
         if ($course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') abort(403);
-
-        $backUrl = $request->query('source') === 'manage'
-            ? route('teacher.courses.show', $course->id)
-            : route('teacher.courses.index');
-
-        return Inertia::render('Teacher/CourseEdit', [
-            'course' => $course,
-            'backUrl' => $backUrl
-        ]);
+        $backUrl = $request->query('source') === 'manage' ? route('teacher.courses.show', $course->id) : route('teacher.courses.index');
+        return Inertia::render('Teacher/CourseEdit', ['course' => $course, 'backUrl' => $backUrl]);
     }
 
     public function update(Request $request, Course $course)
     {
         $user = Auth::user();
-        
-        // Allow course owner OR admin
-        if ($course->teacher_id !== $user->id && $user->role !== 'admin') {
-            abort(403, 'Unauthorized action.');
-        }
+        if ($course->teacher_id !== $user->id && $user->role !== 'admin') abort(403);
 
         $request->validate([
             'title' => 'required|string|max:255',
@@ -164,41 +113,28 @@ class CourseController extends Controller
         $data = $request->only(['title', 'description', 'difficulty_level', 'teacher_id']);
 
         if ($request->hasFile('thumbnail')) {
+            if ($course->thumbnail) Storage::disk('public')->delete(str_replace('/storage/', '', $course->thumbnail));
             $path = $request->file('thumbnail')->store('thumbnails', 'public');
             $data['thumbnail'] = '/storage/' . $path;
         }
 
-        $course->update(array_filter($data)); 
-
+        $course->update($data); 
         return back()->with('success', 'Course updated successfully.');
     }
 
     public function destroy(Course $course)
     {
         $user = Auth::user();
-
-        // Allow course owner OR admin
-        if ($course->teacher_id !== $user->id && $user->role !== 'admin') {
-            abort(403, 'Unauthorized action.');
-        }
-
-        if ($course->thumbnail) {
-            $path = str_replace('/storage/', '', $course->thumbnail);
-            Storage::disk('public')->delete($path);
-        }
-
+        if ($course->teacher_id !== $user->id && $user->role !== 'admin') abort(403);
         $course->delete();
-
-        return back()->with('success', 'Course deleted successfully.');
+        return redirect()->route('teacher.courses.index')->with('success', 'Course deleted successfully.');
     }
 
-    // GRADEBOOK LOGIC
     public function gradebook(Request $request, ?Course $course = null)
     {
         $teacherId = Auth::id();
         $user = Auth::user();
         
-        // Admins can see all courses, Teachers see their own
         if ($user->role === 'admin') {
             $allCourses = Course::select('id', 'title')->orderBy('created_at', 'desc')->get();
         } else {
@@ -206,9 +142,7 @@ class CourseController extends Controller
         }
 
         if ($allCourses->isEmpty()) {
-            return Inertia::render('Teacher/Gradebook', [
-                'course' => null, 'courses' => [], 'assignments' => [], 'students' => []
-            ]);
+            return Inertia::render('Teacher/Gradebook', ['course' => null, 'courses' => [], 'assignments' => [], 'students' => []]);
         }
 
         if (!$course || ($course->teacher_id !== $teacherId && $user->role !== 'admin')) {
@@ -217,6 +151,7 @@ class CourseController extends Controller
 
         $assignments = $course->assignments()->orderBy('created_at')->get();
 
+        // THE ORIGINAL QUERY: Using whereHas to strictly fetch from the Users table based on enrolledCourses
         $students = User::whereHas('enrolledCourses', function($query) use ($course) {
             $query->where('course_id', $course->id)->where('enrollments.status', 'approved');
         })->with(['submissions' => function($query) use ($course) {
@@ -226,10 +161,43 @@ class CourseController extends Controller
         }])->orderBy('name')->get();
 
         return Inertia::render('Teacher/Gradebook', [
-            'course' => $course,
+            'course' => $course, 
             'courses' => $allCourses, 
-            'assignments' => $assignments,
+            'assignments' => $assignments, 
             'students' => $students
         ]);
+    }
+
+    public function togglePublish(Course $course)
+    {
+        if ($course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') {
+            abort(403);
+        }
+
+        $course->update(['is_published' => !$course->is_published]);
+        
+        $msg = $course->is_published 
+            ? 'Course is now LIVE and visible to approved students.' 
+            : 'Course is now HIDDEN. Students can no longer access it.';
+            
+        return back()->with('success', $msg);
+    }
+
+    public function autosaveGrade(Request $request, Course $course)
+    {
+        if ($course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') abort(403);
+
+        $request->validate([
+            'student_id' => 'required|exists:users,id',
+            'assignment_id' => 'required|exists:assignments,id',
+            'grade' => 'nullable|numeric|min:0'
+        ]);
+
+        Submission::updateOrCreate(
+            ['user_id' => $request->student_id, 'assignment_id' => $request->assignment_id],
+            ['grade' => $request->grade, 'text_content' => 'Graded directly via Smart Gradebook.']
+        );
+
+        return response()->json(['status' => 'success']);
     }
 }

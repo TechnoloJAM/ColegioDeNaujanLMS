@@ -9,32 +9,26 @@ const messagesContainer = ref(null);
 const userMessage = ref('');
 const isLoading = ref(false);
 
-// Generate a dynamic storage key based on the currently logged-in user ID
 const page = usePage();
 const userId = page.props.auth.user.id;
 const storageKey = `lms_ai_chat_history_${userId}`;
 
 // --- PERSISTENCE LOGIC ---
-
-// 1. Load messages from localStorage using the unique user key
 onMounted(() => {
     const savedChat = localStorage.getItem(storageKey);
     if (savedChat) {
         messages.value = JSON.parse(savedChat);
     } else {
-        // Default welcome message if no history exists for this specific user
         messages.value = [
             { role: 'ai', content: 'Hello! I am your AI Assistant. How can I help you today?' }
         ];
     }
 });
 
-// 2. Watch for changes in messages and save to the unique user key
 watch(messages, (newVal) => {
     localStorage.setItem(storageKey, JSON.stringify(newVal));
 }, { deep: true });
 
-// 3. Manual Reset/Refresh function
 const clearChat = () => {
     if (confirm("Are you sure you want to clear your chat history?")) {
         messages.value = [
@@ -45,7 +39,6 @@ const clearChat = () => {
 };
 
 // --- CHAT LOGIC ---
-
 const scrollToBottom = async () => {
     await nextTick();
     if (messagesContainer.value) {
@@ -56,6 +49,14 @@ const scrollToBottom = async () => {
 const toggleChat = () => {
     isOpen.value = !isOpen.value;
     if (isOpen.value) scrollToBottom();
+};
+
+// NEW: Simple text formatter to make the AI's Bold text and Line Breaks look beautiful
+const formatMessage = (text) => {
+    if (!text) return '';
+    return text
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-black">$1</strong>') // Bold formatting
+        .replace(/\n/g, '<br/>'); // Line break formatting
 };
 
 const sendMessage = async () => {
@@ -71,7 +72,13 @@ const sendMessage = async () => {
     scrollToBottom();
 
     try {
-        const response = await axios.post(route('ai.chat'), { message: currentMessage });
+        // NEW: Silently pass the current screen context to the AI
+        const response = await axios.post(route('ai.chat'), { 
+            message: currentMessage,
+            current_url: window.location.pathname,
+            page_title: document.title
+        });
+        
         messages.value.pop(); // Remove loading dots
         messages.value.push({ role: 'ai', content: response.data.response });
     } catch (error) {
@@ -123,9 +130,9 @@ const sendMessage = async () => {
                         <div v-if="msg.role === 'ai'" class="w-6 h-6 rounded-full bg-blue-100 dark:bg-slate-700 flex items-center justify-center shrink-0 mt-1">
                             <svg class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                         </div>
-                        <div class="max-w-[85%] px-3 py-2 rounded-xl text-[11px] leading-relaxed shadow-sm" :class="msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-bl-none'">
+                        <div class="max-w-[85%] px-3 py-2 rounded-xl text-[12px] sm:text-[11px] leading-relaxed shadow-sm" :class="msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-bl-none'">
                             <span v-if="msg.isLoading" class="flex gap-1 items-center h-4"><span class="w-1 h-1 bg-current rounded-full animate-bounce"></span><span class="w-1 h-1 bg-current rounded-full animate-bounce delay-100"></span><span class="w-1 h-1 bg-current rounded-full animate-bounce delay-200"></span></span>
-                            <span v-else>{{ msg.content }}</span>
+                            <span v-else v-html="formatMessage(msg.content)"></span>
                         </div>
                     </div>
                 </div>

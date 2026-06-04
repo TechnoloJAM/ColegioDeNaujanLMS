@@ -1,6 +1,8 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 
+defineOptions({ inheritAttrs: false });
+
 const model = defineModel({
     type: String,
     required: true,
@@ -19,19 +21,21 @@ defineExpose({ focus: () => input.value.focus() });
 </script>
 
 <template>
-    <div class="relative">
+    <div class="relative w-full" :class="$attrs.class">
         <input
             ref="input"
-            class="rounded-md border-zinc-300 bg-white text-black shadow-sm focus:border-blue-500 focus:ring-blue-500 w-full pr-10 placeholder-gray-400"
+            class="rounded-lg border-slate-300 bg-white text-slate-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 w-full pr-10 placeholder-slate-400 transition-colors [&::-ms-reveal]:hidden [&::-webkit-reveal]:hidden"
             :type="show ? 'text' : 'password'"
             v-model="model"
+            v-bind="{ ...$attrs, class: undefined }"
             placeholder="••••••••"
         />
         
         <button
             type="button"
             @click="show = !show"
-            class="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-blue-600 focus:outline-none transition ease-in-out duration-150"
+            tabindex="-1"
+            class="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-blue-600 focus:outline-none transition-colors duration-150"
         >
             <svg v-if="!show" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
