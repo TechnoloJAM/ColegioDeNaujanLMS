@@ -17,6 +17,10 @@ const selectCourse = (id) => { selectedCourseId.value = id; };
 const handleCourseDropdownSelect = (e) => { selectCourse(Number(e.target.value)); };
 const handleImageError = (id) => { imageErrors.value[id] = true; };
 
+// 🪄 NEW HELPERS: Scrub the tag and check for restriction
+const cleanDescription = (text) => text ? text.replace('[RESTRICT_LATE_STUDENTS]', '').trim() : '';
+const isRestricted = (text) => text ? text.includes('[RESTRICT_LATE_STUDENTS]') : false;
+
 const selectedCourse = computed(() => props.courses.find(c => c.id === selectedCourseId.value));
 
 const countUpcoming = (assignments) => {
@@ -72,7 +76,7 @@ const filteredAssignments = computed(() => {
     <Head title="Assignments" />
     <AuthenticatedLayout>
         
-        <!-- MOBILE FLOATING FAB (Extracted to Root so it never gets blocked) -->
+        <!-- MOBILE FLOATING FAB -->
         <Link v-if="selectedCourseId" :href="route('teacher.assignments.create', { course: selectedCourseId, source: 'global' })" class="md:hidden fixed bottom-[156px] right-4 z-[9999] flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-blue-600 hover:text-white hover:bg-blue-600 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.15)] active:scale-95 cursor-pointer">
             <Plus class="w-6 h-6" />
         </Link>
@@ -101,7 +105,7 @@ const filteredAssignments = computed(() => {
 
             <div class="flex-1 flex flex-col md:flex-row gap-0 md:gap-4 overflow-hidden bg-slate-50/30 md:bg-transparent rounded-none md:rounded-lg relative">
                 
-                <!-- DESKTOP FLOATING FAB (Left Side, Extracted safely) -->
+                <!-- DESKTOP FLOATING FAB -->
                 <div class="hidden md:flex flex-col w-12 shrink-0 gap-3 pt-1 z-10">
                     <Link v-if="selectedCourseId" :href="route('teacher.assignments.create', { course: selectedCourseId, source: 'global' })" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-blue-600 hover:text-white hover:bg-blue-600 transition-all shadow-sm hover:shadow-md focus:outline-none active:scale-95 cursor-pointer">
                         <Plus class="w-5 h-5" />
@@ -160,7 +164,6 @@ const filteredAssignments = computed(() => {
                         <div class="border-b border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 flex justify-between items-center px-1 sm:px-4">
                             <!-- Scrollable Tabs -->
                             <div class="flex overflow-x-auto scrollbar-hide w-full sm:w-auto pb-1 sm:pb-0">
-                                <!-- NEEDS GRADING TAB -->
                                 <button @click="activeTab = 'needs_grading'"
                                     class="px-2 sm:px-3 py-2 sm:py-3 text-[9px] sm:text-[10px] font-black uppercase tracking-widest mr-1 sm:mr-6 transition-all border-b-2 whitespace-nowrap flex items-center gap-1.5 flex-1 sm:flex-none justify-center relative"
                                     :class="activeTab === 'needs_grading' ? 'border-amber-500 text-amber-600 dark:text-amber-500' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'">
@@ -196,7 +199,7 @@ const filteredAssignments = computed(() => {
                             </div>
                         </div>
 
-                        <!-- Mobile Sort Bar (Extremely thin) -->
+                        <!-- Mobile Sort Bar -->
                         <div class="sm:hidden flex justify-end px-2 py-1.5 bg-slate-100/50 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-700">
                              <select v-model="sortOrder" class="text-[8px] font-black uppercase tracking-widest text-slate-500 bg-transparent border-none focus:ring-0 cursor-pointer py-0 pl-1 pr-6 h-5">
                                 <option value="desc">Sort: Latest</option>
@@ -244,6 +247,11 @@ const filteredAssignments = computed(() => {
                                             </div>
                                             
                                             <div class="flex gap-1.5 shrink-0">
+                                                <!-- NEW: RESTRICTED LABEL -->
+                                                <span v-if="isRestricted(assignment.description)" class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400 px-1.5 py-0.5 rounded shadow-sm border border-orange-200 dark:border-orange-800">
+                                                    Hidden to Late Enrollees
+                                                </span>
+
                                                 <!-- "TO GRADE" BADGE -->
                                                 <span v-if="assignment.ungraded_count > 0" class="flex items-center gap-1 text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-1.5 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-800">
                                                     <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
@@ -257,8 +265,9 @@ const filteredAssignments = computed(() => {
                                             </div>
                                         </div>
 
+                                        <!-- Uses the cleaner helper to strip the tag -->
                                         <p class="hidden sm:block text-[10px] text-slate-500 dark:text-slate-400 truncate font-medium leading-snug mt-0.5">
-                                            {{ assignment.description || 'No instructions provided.' }}
+                                            {{ cleanDescription(assignment.description) || 'No instructions provided.' }}
                                         </p>
                                     </div>
 

@@ -81,8 +81,18 @@ const submitUnarchive = () => {
 
 const formLesson = useForm({ title: '', file: null, available_from: '', available_until: '' });
 const formAnnouncement = useForm({ title: '', video_link: '', content: '' });
-const formComment = useForm({ content: '' });
-const formAssignment = useForm({ title: '', type: 'assignment', description: '', points: 100, due_date: '', closing_date: '', files: [] });
+
+// 🪄 ADDED: hide_from_late default state
+const formAssignment = useForm({ 
+    title: '', 
+    type: 'assignment', 
+    description: '', 
+    points: 100, 
+    due_date: '', 
+    closing_date: '', 
+    files: [],
+    hide_from_late: false 
+});
 
 // The 3 Material Tabs Filter Logic
 const materialFilter = ref('active');
@@ -128,10 +138,8 @@ const formatRichText = (htmlContent) => {
     processed = processed.replace(ytRegex, (match, videoId) => {
         return `
         <div class="my-3 w-full max-w-[320px] sm:max-w-[400px] not-prose">
-            <!-- Desktop View: Iframe Embed -->
             <iframe class="hidden sm:block w-full aspect-video rounded-lg shadow-sm border border-slate-200 dark:border-slate-700" src="https://www.youtube-nocookie.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>
             
-            <!-- Mobile View: Clickable Button with Real YouTube Thumbnail -->
             <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" class="sm:hidden relative flex flex-col items-center justify-center w-full aspect-video bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition group !no-underline overflow-hidden">
                 <img src="https://img.youtube.com/vi/${videoId}/hqdefault.jpg" class="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" alt="Video Thumbnail" />
                 <div class="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors"></div>
@@ -211,7 +219,23 @@ const togglePublish = () => {
 const submitAnnouncement = () => formAnnouncement.post(route('teacher.announcements.store', props.course.id), { onSuccess: () => { showAnnouncementModal.value = false; formAnnouncement.reset(); }});
 const submitComment = (announcementId) => formComment.post(route('comments.store', announcementId), { onSuccess: () => { formComment.reset(); const post = props.course.announcements.find(a => a.id === announcementId); if(post) post.showComments = true; }, preserveScroll: true });
 
-const submitAssignment = () => formAssignment.post(route('teacher.assignments.store', props.course.id), { forceFormData: true, onSuccess: () => { showAssignmentModal.value = false; formAssignment.reset(); }});
+// 🪄 ADDED: The Secret Tag Logic
+const submitAssignment = () => {
+    formAssignment.transform((data) => ({
+        ...data,
+        description: data.hide_from_late 
+            ? (data.description ? data.description + '\n[RESTRICT_LATE_STUDENTS]' : '[RESTRICT_LATE_STUDENTS]')
+            : data.description,
+    })).post(route('teacher.assignments.store', props.course.id), {
+        forceFormData: true,
+        preserveScroll: true,
+        onSuccess: () => { 
+            showAssignmentModal.value = false; 
+            formAssignment.reset(); 
+        }
+    });
+};
+
 const submitLesson = () => formLesson.post(route('teacher.lessons.store', props.course.id), { forceFormData: true, onSuccess: () => { showLessonModal.value = false; formLesson.reset(); }});
 
 const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent py-1.5 px-3 text-base sm:text-xs h-10 sm:h-8 shadow-sm transition-colors duration-200";
@@ -415,7 +439,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <div class="p-3 space-y-2">
                             <h3 v-if="post.title" class="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{{ post.title }}</h3>
                             
-                            <!-- EXPLICIT VIDEO LINK WITH DESKTOP/MOBILE THUMBNAIL SPLIT -->
                             <div v-if="post.video_link" class="w-full max-w-[320px] sm:max-w-[400px] mb-3">
                                 <template v-if="getYouTubeVideoId(post.video_link)">
                                     <iframe 
@@ -487,7 +510,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     
                     <div class="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg gap-1 mb-2">
                         <button @click="assignmentFilter = 'upcoming'" class="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-md flex items-center justify-center gap-1 transition-all" :class="assignmentFilter === 'upcoming' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Upcoming
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg Upcoming>
                         </button>
                         <button @click="assignmentFilter = 'past_due'" class="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-md flex items-center justify-center gap-1 transition-all" :class="assignmentFilter === 'past_due' ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Past Due
@@ -782,6 +805,13 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             <InputLabel value="Closing Date (Hard Deadline)" class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1" />
                             <input v-model="formAssignment.closing_date" type="datetime-local" :class="inputClass" />
                         </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                        <input type="checkbox" id="modal_hide_late" v-model="formAssignment.hide_from_late" class="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer w-4 h-4" />
+                        <label for="modal_hide_late" class="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                            Hide from Late Enrollees
+                        </label>
                     </div>
 
                     <div>
