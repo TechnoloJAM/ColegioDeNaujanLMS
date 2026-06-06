@@ -17,6 +17,13 @@ const props = defineProps({
     backUrl: String
 });
 
+// 🪄 PARSE THE SECRET TAG
+const rawDescription = props.assignment.description || '';
+const secretTag = '[RESTRICT_LATE_STUDENTS]';
+const hasHiddenTag = rawDescription.includes(secretTag);
+// Clean it out so the teacher doesn't see the text!
+const cleanDescription = rawDescription.replace(secretTag, '').trim();
+
 const activeTab = ref('details'); 
 const isEditing = ref(false); 
 const showGradeModal = ref(false);
@@ -53,17 +60,23 @@ const minDueDateTime = computed(() => {
 const editForm = useForm({
     _method: 'patch',
     title: props.assignment.title,
-    description: props.assignment.description,
+    description: cleanDescription, // Set to the clean text without the tag
     type: props.assignment.type || 'assignment',
     points: props.assignment.points,
     due_date: formatDateForInput(props.assignment.due_date),
     closing_date: formatDateForInput(props.assignment.closing_date),
     files: [], 
+    hide_from_late: hasHiddenTag // Check the box if the tag was found!
 });
 
 const gradeForm = useForm({ grade: '', feedback: '' });
 
-const linkify = (text) => text ? text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline font-bold">$1</a>') : 'No instructions provided.';
+const linkify = (text) => {
+    if (!text) return 'No instructions provided.';
+    let clean = text.replace(/\[RESTRICT_LATE_STUDENTS\]/g, '').trim();
+    if (!clean) return 'No instructions provided.';
+    return clean.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline font-bold">$1</a>');
+};
 
 const getAssignmentPaths = (assignment) => {
     if (!assignment || !assignment.attachment_paths) return [];
@@ -89,7 +102,13 @@ const currentFilePath = computed(() => {
 });
 
 const updateAssignment = () => {
-    editForm.post(route('teacher.assignments.update', props.assignment.id), {
+    // 🪄 INERTIA TRANSFORM: Re-apply the tag if they still have the box checked
+    editForm.transform((data) => ({
+        ...data,
+        description: data.hide_from_late 
+            ? (data.description ? data.description + '\n[RESTRICT_LATE_STUDENTS]' : '[RESTRICT_LATE_STUDENTS]')
+            : data.description,
+    })).post(route('teacher.assignments.update', props.assignment.id), {
         preserveScroll: true,
         forceFormData: true,
         onSuccess: () => {
@@ -289,6 +308,14 @@ const submitGrade = () => {
                                 <input v-model="editForm.closing_date" :min="editForm.due_date || minDueDateTime" type="datetime-local" class="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-lg p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 transition dark:[color-scheme:dark]" />
                                 <InputError class="mt-1 text-[9px]" :message="editForm.errors.closing_date" />
                             </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                            <input type="checkbox" id="edit_hide_late" v-model="editForm.hide_from_late" class="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer w-4 h-4" />
+                            <label for="edit_hide_late" class="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                                Hide from Late Enrollees
+                            </label>
+                            <span class="text-[9px] text-slate-500 dark:text-slate-400 ml-auto font-bold">(Excuses students who join after the due date)</span>
                         </div>
 
                         <div>

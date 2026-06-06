@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router } from '@inertiajs/vue3';
-import { Download, ChevronDown, ChevronUp, ArrowUpDown, FileText } from 'lucide-vue-next';
+import { Download, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock } from 'lucide-vue-next';
 import { ref, computed } from 'vue';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
@@ -13,36 +13,50 @@ const props = defineProps({
     assignments: Array,
 });
 
-// State for Mobile Accordion & Sorting
 const expandedStudentId = ref(null);
 const sortOrder = ref('alpha_asc');
 
-// 🛡️ Edit, Save, and Validation State
 const isEditMode = ref(false);
 const isSaving = ref(false);
 const pendingGrades = ref({});
-const validationErrors = ref({}); // Tracks inputs that exceed max score
+const validationErrors = ref({}); 
 
-// Clean computed property to check if any errors exist
 const hasErrors = computed(() => Object.keys(validationErrors.value).length > 0);
 
 const toggleStudent = (studentId) => {
     expandedStudentId.value = expandedStudentId.value === studentId ? null : studentId;
 };
 
-// Helper to safely find a student's submission
 const getSubmission = (student, assignmentId) => {
     if (!student.submissions) return null;
     return student.submissions.find(s => s.assignment_id === assignmentId);
 };
 
-// Tracks keystrokes AND validates if the score is too high
+// 🪄 THE SECRET TAG LOGIC (Using the new tag!)
+const isLateEnrollee = (student, assignment) => {
+    const desc = assignment.description || '';
+    
+    // Check if the teacher clicked the checkbox (which appended the tag)
+    const isHiddenFromLate = desc.includes('[RESTRICT_LATE_STUDENTS]');
+    
+    // If the teacher didn't check the box, it is mandatory for everyone!
+    if (!isHiddenFromLate) return false; 
+    
+    // If they did check the box, calculate if the student is late
+    if (!assignment.due_date) return false; 
+    if (!student.pivot || !student.pivot.created_at) return false;
+    
+    const enrollmentDate = new Date(student.pivot.created_at);
+    const dueDate = new Date(assignment.due_date);
+    
+    return enrollmentDate > dueDate;
+};
+
 const updatePendingGrade = (studentId, assignmentId, maxPoints, event) => {
     const val = event.target.value.trim();
     const numericVal = parseFloat(val);
     const max = parseFloat(maxPoints);
 
-    // Validation Check: If input is greater than maximum allowed points
     if (val !== '' && !isNaN(numericVal) && numericVal > max) {
         validationErrors.value[`${studentId}_${assignmentId}`] = true;
     } else {
@@ -56,7 +70,6 @@ const updatePendingGrade = (studentId, assignmentId, maxPoints, event) => {
     };
 };
 
-// Fetches the current visible grade (either pending unsaved changes or the DB value)
 const getInputValue = (studentId, assignmentId) => {
     const key = `${studentId}_${assignmentId}`;
     if (pendingGrades.value[key] !== undefined) {
@@ -66,30 +79,25 @@ const getInputValue = (studentId, assignmentId) => {
     return getSubmission(student, assignmentId)?.grade ?? '';
 };
 
-// Toggles Edit Mode OR Saves all pending changes to the database
 const toggleEditMode = async () => {
     if (!isEditMode.value) {
-        // Turn ON Edit Mode
         isEditMode.value = true;
         pendingGrades.value = {}; 
         validationErrors.value = {}; 
     } else {
-        // Block save if there are validation errors
         if (hasErrors.value) {
             alert('Cannot save: One or more grades exceed the maximum allowed score. Please fix the highlighted errors.');
             return;
         }
 
-        // SAVE CHANGES
         const keys = Object.keys(pendingGrades.value);
         if (keys.length === 0) {
-            isEditMode.value = false; // Turn off if nothing was changed
+            isEditMode.value = false; 
             return;
         }
 
         isSaving.value = true;
         try {
-            // Send all modified grades to the backend concurrently
             const requests = keys.map(key => {
                 const data = pendingGrades.value[key];
                 const gradeVal = data.grade !== '' ? parseFloat(data.grade) : null;
@@ -101,8 +109,6 @@ const toggleEditMode = async () => {
             });
 
             await Promise.all(requests);
-            
-            // Reload the students data dynamically to instantly update the Averages!
             router.reload({ only: ['students'] });
             
             pendingGrades.value = {};
@@ -304,8 +310,8 @@ const downloadExcel = () => {
                     
                     <div v-if="isEditMode" class="p-2 text-center text-xs font-black uppercase tracking-widest border-b transition-colors"
                          :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
-                        <span v-if="hasErrors">Cannot Save: A grade exceeds the maximum score!</span>
-                        <span v-else>Edit Mode Active: Click "Save Changes" when finished.</span>
+                        <span v-if="hasErrors">❌ Cannot Save: A grade exceeds the maximum score!</span>
+                        <span v-else>✏️ Edit Mode Active: Click "Save Changes" when finished.</span>
                     </div>
 
                     <table class="w-full text-left text-sm whitespace-nowrap">
@@ -337,7 +343,6 @@ const downloadExcel = () => {
                                     
                                     <template v-if="getSubmission(student, a.id)">
                                         <div class="flex items-center justify-center gap-1.5">
-                                            
                                             <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission" 
                                                class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition">
                                                 <FileText class="w-4 h-4 shrink-0" />
@@ -367,7 +372,10 @@ const downloadExcel = () => {
                                     </template>
                                     
                                     <template v-else>
-                                        <div class="w-full text-center py-1.5 text-[10px] font-black text-red-400 dark:text-red-500/80 uppercase tracking-widest cursor-not-allowed" title="No submission found">
+                                        <div v-if="isLateEnrollee(student, a)" class="w-full text-center py-1 flex items-center justify-center gap-1 text-[8px] font-black text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/50 rounded uppercase tracking-widest cursor-not-allowed border border-slate-200 dark:border-slate-700" title="Task hidden: The deadline passed before this student enrolled.">
+                                            <Clock class="w-3 h-3" /> Late Enrollee
+                                        </div>
+                                        <div v-else class="w-full text-center py-1.5 text-[10px] font-black text-red-400 dark:text-red-500/80 uppercase tracking-widest cursor-not-allowed" title="No submission found">
                                             Missing
                                         </div>
                                     </template>
@@ -394,8 +402,8 @@ const downloadExcel = () => {
                     
                     <div v-if="isEditMode" class="p-2 text-center text-[10px] font-black uppercase tracking-widest rounded-lg border shadow-sm mb-2 transition-colors"
                          :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
-                        <span v-if="hasErrors">A grade exceeds max score</span>
-                        <span v-else>Edit Mode Active</span>
+                        <span v-if="hasErrors">❌ A grade exceeds max score</span>
+                        <span v-else>✏️ Edit Mode Active</span>
                     </div>
 
                     <div v-for="(student, index) in processedStudents" :key="student.id" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
@@ -457,7 +465,10 @@ const downloadExcel = () => {
                                 </template>
 
                                 <template v-else>
-                                    <div class="w-full h-7 flex items-center justify-center rounded bg-red-50 dark:bg-red-900/20 text-red-400 dark:text-red-500/80 text-[9px] font-black uppercase tracking-widest cursor-not-allowed border border-red-100 dark:border-red-900/30">
+                                    <div v-if="isLateEnrollee(student, a)" class="w-full h-7 flex items-center justify-center gap-1.5 rounded bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 text-[9px] font-black uppercase tracking-widest cursor-not-allowed border border-slate-200 dark:border-slate-700" title="Task hidden: The deadline passed before this student enrolled.">
+                                        <Clock class="w-3 h-3" /> Late Enrollee
+                                    </div>
+                                    <div v-else class="w-full h-7 flex items-center justify-center rounded bg-red-50 dark:bg-red-900/20 text-red-400 dark:text-red-500/80 text-[9px] font-black uppercase tracking-widest cursor-not-allowed border border-red-100 dark:border-red-900/30">
                                         Missing
                                     </div>
                                 </template>
@@ -469,18 +480,6 @@ const downloadExcel = () => {
                 </div>
 
             </div>
-
-            <div v-else-if="!course" class="p-10 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm">
-                <p class="text-slate-500 font-black text-[10px] uppercase tracking-widest">No classes available for grading.</p>
-            </div>
-            
-            <div v-else class="p-10 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 shadow-sm">
-                <div class="w-10 h-10 mx-auto bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center mb-2">
-                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                </div>
-                <p class="text-slate-500 font-black text-[10px] uppercase tracking-widest">No enrolled students.</p>
-            </div>
-            
         </div>
     </AuthenticatedLayout>
 </template>
@@ -494,10 +493,12 @@ const downloadExcel = () => {
 input[type="number"]::-webkit-inner-spin-button, 
 input[type="number"]::-webkit-outer-spin-button { 
     -webkit-appearance: none; 
+    appearance: none;
     margin: 0; 
 }
 input[type="number"] { 
     -moz-appearance: textfield; 
+    appearance: textfield;
 }
 
 @media (prefers-color-scheme: dark) {

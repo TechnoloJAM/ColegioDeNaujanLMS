@@ -10,18 +10,37 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 
 class StudentController extends Controller
 {
+    // 🪄 NEW HELPER FUNCTION: Teaches the backend to read the secret tag!
+    private function isHiddenFromStudent($assignment, $enrollmentDate)
+    {
+        if (!$assignment->due_date) return false;
+        
+        // Look for the invisible sticky note in the description using the NEW tag
+        if (!str_contains($assignment->description ?? '', '[RESTRICT_LATE_STUDENTS]')) {
+            return false;
+        }
+
+        // Check if they enrolled after the deadline
+        return Carbon::parse($enrollmentDate) > Carbon::parse($assignment->due_date);
+    }
+
     public function dashboard()
     {
         $user = Auth::user();
         
-        $enrolledCourseIds = Enrollment::where('user_id', $user->id)
+        $enrollments = Enrollment::where('user_id', $user->id)
             ->where('status', 'approved')
-            ->pluck('course_id');
+            ->get()
+            ->keyBy('course_id');
             
-        $pendingCount = Assignment::whereIn('course_id', $enrolledCourseIds)
+        $enrolledCourseIds = $enrollments->keys();
+            
+        // Fetch pending assignments and filter out the hidden ones
+        $pendingAssignments = Assignment::whereIn('course_id', $enrolledCourseIds)
             ->where(function ($q) {
                 $q->where('closing_date', '>=', now())
                   ->orWhereNull('closing_date');
@@ -29,7 +48,13 @@ class StudentController extends Controller
             ->whereDoesntHave('submissions', function($q) use ($user) {
                 $q->where('user_id', $user->id);
             })
-            ->count();
+            ->get()
+            ->reject(function($a) use ($enrollments) {
+                $enrollmentDate = $enrollments[$a->course_id]->created_at ?? $enrollments[$a->course_id]->enrolled_at;
+                return $this->isHiddenFromStudent($a, $enrollmentDate);
+            });
+
+        $pendingCount = $pendingAssignments->count();
 
         $hardCodedRecommendations = [];
         
@@ -41,6 +66,12 @@ class StudentController extends Controller
             $total = 0; $earned = 0;
             
             foreach ($assignments as $a) {
+                // 🛡️ Skip hidden tasks so it doesn't ruin their grade average!
+                $enrollmentDate = $enrollments[$courseId]->created_at ?? $enrollments[$courseId]->enrolled_at;
+                if ($this->isHiddenFromStudent($a, $enrollmentDate)) {
+                    continue; 
+                }
+
                 $sub = Submission::where('user_id', $user->id)->where('assignment_id', $a->id)->first();
                 if ($sub && $sub->grade !== null) {
                     $earned += $sub->grade; 
@@ -60,6 +91,7 @@ class StudentController extends Controller
             }
         }
 
+        // Fetch upcoming and filter out hidden ones
         $upcoming = Assignment::whereIn('course_id', $enrolledCourseIds)
             ->where(function ($q) {
                 $q->where('closing_date', '>=', now())
@@ -70,8 +102,13 @@ class StudentController extends Controller
             })
             ->with('course:id,title')
             ->orderBy('due_date', 'asc')
+            ->get()
+            ->reject(function($a) use ($enrollments) {
+                $enrollmentDate = $enrollments[$a->course_id]->created_at ?? $enrollments[$a->course_id]->enrolled_at;
+                return $this->isHiddenFromStudent($a, $enrollmentDate);
+            })
             ->take(5)
-            ->get();
+            ->values();
 
         $announcements = \App\Models\Announcement::whereIn('course_id', $enrolledCourseIds)
             ->with(['course:id,title', 'user:id,name'])
@@ -163,6 +200,14 @@ class StudentController extends Controller
             'announcements.comments.user'
         ]);
 
+        // 🛡️ Strip out hidden assignments before sending to the Vue file
+        $enrollmentDate = $enrollment->created_at ?? $enrollment->enrolled_at;
+        $filteredAssignments = $course->assignments->reject(function($a) use ($enrollmentDate) {
+            return $this->isHiddenFromStudent($a, $enrollmentDate);
+        })->values();
+        
+        $course->setRelation('assignments', $filteredAssignments);
+
         return Inertia::render('Student/CourseShow', ['course' => $course]);
     }
 
@@ -175,6 +220,7 @@ class StudentController extends Controller
     public function assignments()
     {
         $user = Auth::user();
+        
         $courses = $user->enrolledCourses()
             ->where('enrollments.status', 'approved')
             ->where('courses.is_published', true)
@@ -184,6 +230,16 @@ class StudentController extends Controller
                 $q->where('user_id', $user->id);
             }])
             ->get();
+
+        // 🛡️ Filter hidden assignments from the main Tasks list
+        foreach ($courses as $course) {
+            $enrollmentDate = $course->pivot->created_at ?? $course->pivot->enrolled_at;
+            $filteredAssignments = $course->assignments->reject(function($a) use ($enrollmentDate) {
+                return $this->isHiddenFromStudent($a, $enrollmentDate);
+            })->values();
+            
+            $course->setRelation('assignments', $filteredAssignments);
+        }
 
         return Inertia::render('Student/AssignmentList', ['courses' => $courses]);
     }
@@ -201,7 +257,6 @@ class StudentController extends Controller
             return back()->with('error', 'The hard deadline has passed. Submissions are locked.');
         }
 
-        // 1. Exact same validation as the Teacher side
         $request->validate([
             'text_content' => 'nullable|string',
             'files.*' => 'nullable|file|max:15360' 
@@ -216,7 +271,6 @@ class StudentController extends Controller
 
         $existingSubmission = Submission::where('assignment_id', $assignment->id)->where('user_id', Auth::id())->first();
 
-        // 2. Exact same file processing as the Teacher side
         $filePaths = [];
         if ($hasFiles) {
             foreach ($request->file('files') as $file) {
@@ -226,7 +280,6 @@ class StudentController extends Controller
             $filePaths = json_decode($existingSubmission->file_paths, true) ?? [];
         }
 
-        // 3. Save
         Submission::updateOrCreate(
             ['assignment_id' => $assignment->id, 'user_id' => Auth::id()],
             [

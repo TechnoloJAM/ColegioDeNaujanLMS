@@ -19,6 +19,7 @@ const form = useForm({
     due_date: '',
     closing_date: '',
     files: [],
+    hide_from_late: false // DEFAULT: Unchecked (Mandatory for everyone)
 });
 
 // Refs for UI state
@@ -41,24 +42,21 @@ const goBack = () => {
 };
 
 const submit = () => {
-    form.post(route('teacher.assignments.store', props.course.id), {
+    // 🪄 INERTIA TRANSFORM: Intercepts the data right before sending
+    // Uses the new tag that won't be erased by the editor!
+    form.transform((data) => ({
+        ...data,
+        description: data.hide_from_late 
+            ? (data.description ? data.description + '\n[RESTRICT_LATE_STUDENTS]' : '[RESTRICT_LATE_STUDENTS]')
+            : data.description,
+    })).post(route('teacher.assignments.store', props.course.id), {
         preserveScroll: true,
         onSuccess: () => {
-            // 1. Reset the form data back to default
             form.reset();
+            if (fileInput.value) fileInput.value.value = '';
             
-            // 2. Clear the physical file input element in the browser
-            if (fileInput.value) {
-                fileInput.value.value = '';
-            }
-            
-            // 3. Show success message
             showSuccess.value = true;
-            
-            // 4. Hide success message after 3.5 seconds
-            setTimeout(() => {
-                showSuccess.value = false;
-            }, 3500);
+            setTimeout(() => { showSuccess.value = false; }, 3500);
         }
     });
 };
@@ -96,8 +94,7 @@ const submit = () => {
                     enter-to-class="opacity-100 translate-y-0"
                     leave-active-class="transition ease-in duration-200" 
                     leave-from-class="opacity-100 translate-y-0" 
-                    leave-to-class="opacity-0 -translate-y-2"
-                >
+                    leave-to-class="opacity-0 -translate-y-2">
                     <div v-if="showSuccess" class="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
                         <CheckCircle class="w-4 h-4 shrink-0" />
                         <span class="text-[10px] font-black uppercase tracking-widest">Assignment created successfully!</span>
@@ -108,7 +105,7 @@ const submit = () => {
                     
                     <div>
                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Title <span class="text-red-500">*</span></label>
-                        <input v-model="form.title" type="text" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm" placeholder="e.g., Chapter 1 Quiz" required autofocus />
+                        <input v-model="form.title" type="text" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm" required autofocus />
                         <InputError class="mt-1 text-[9px]" :message="form.errors.title" />
                     </div>
                     
@@ -120,13 +117,10 @@ const submit = () => {
                                 <option value="activity">Activity</option>
                                 <option value="performance_task">Performance Task</option>
                             </select>
-                            <InputError class="mt-1 text-[9px]" :message="form.errors.type" />
                         </div>
-                        
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Points <span class="text-red-500">*</span></label>
                             <input v-model="form.points" type="number" min="0" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm" required />
-                            <InputError class="mt-1 text-[9px]" :message="form.errors.points" />
                         </div>
                     </div>
 
@@ -134,20 +128,24 @@ const submit = () => {
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Due Date (Soft Deadline) <span class="text-red-500">*</span></label>
                             <input v-model="form.due_date" :min="minDateTime" type="datetime-local" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm dark:[color-scheme:dark]" required />
-                            <InputError class="mt-1 text-[9px]" :message="form.errors.due_date" />
                         </div>
-                        
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Closing Date (Hard Deadline)</label>
                             <input v-model="form.closing_date" :min="form.due_date || minDateTime" type="datetime-local" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-[10px] font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm dark:[color-scheme:dark]" />
-                            <InputError class="mt-1 text-[9px]" :message="form.errors.closing_date" />
                         </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                        <input type="checkbox" id="hide_late" v-model="form.hide_from_late" class="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 cursor-pointer w-4 h-4" />
+                        <label for="hide_late" class="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                            Hide from Late Enrollees
+                        </label>
+                        <span class="text-[9px] text-slate-500 dark:text-slate-400 ml-auto font-bold">(Excuses students who join after the due date)</span>
                     </div>
 
                     <div>
                          <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Instructions (Optional)</label>
                         <textarea v-model="form.description" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-xs h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition shadow-sm" placeholder="Write instructions or guidelines for the students here..."></textarea>
-                        <InputError class="mt-1 text-[9px]" :message="form.errors.description" />
                     </div>
 
                     <div>
@@ -163,7 +161,6 @@ const submit = () => {
                                 <span class="shrink-0 text-slate-400">{{ (file.size / 1024).toFixed(0) }} KB</span>
                             </div>
                         </div>
-                        <InputError class="mt-1 text-[9px]" :message="form.errors.files" />
                     </div>
 
                     <div class="pt-5 mt-2 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2">
@@ -184,14 +181,7 @@ const submit = () => {
 </template>
 
 <style scoped>
-.custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.2);
-    border-radius: 10px;
-}
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.2); border-radius: 10px; }
 </style>
