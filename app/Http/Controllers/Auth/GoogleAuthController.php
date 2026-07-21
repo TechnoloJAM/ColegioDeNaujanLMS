@@ -83,9 +83,18 @@ class GoogleAuthController extends Controller
         $request->validate([
             'school_id' => 'required|string|max:50',
             'program' => 'required|string|max:100',
-            'contact_number' => 'required|string|max:20',
-            'password' => 'required|string|min:8|confirmed',
+            'contact_number' => 'required|digits:11',
+            'password' => [
+                'required', 
+                'string', 
+                'min:8', 
+                'regex:/[0-9]/',
+                'confirmed'
+            ],
             'terms' => 'accepted',
+        ], [
+            'contact_number.digits' => 'Your contact number must be exactly 11 digits.',
+            'password.regex' => 'Your password must contain at least one number.',
         ]);
 
         $user = User::find(Auth::id());

@@ -28,27 +28,36 @@ class RegisteredUserController extends Controller
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function store(Request $request): RedirectResponse
+
+    public function store(Request $request): \Illuminate\Http\RedirectResponse
     {
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            // Removed role validation entirely
         ]);
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'role' => 'student', // Hardcoded to student
+            'password' => \Illuminate\Support\Facades\Hash::make($request->password),
+            'role' => 'student',
         ]);
 
-        event(new Registered($user));
+        // Generate the 60-second OTP
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        
+        \App\Models\OtpToken::create([
+            'email' => $user->email,
+            'token' => $code,
+            'purpose' => 'registration',
+        ]);
 
-        Auth::login($user);
+        \Illuminate\Support\Facades\Mail::to($user->email)->send(new \App\Mail\OtpMail($code));
 
-        // Everyone goes to the student dashboard by default
-        return redirect(route('dashboard'));
+        // Pass the email to the session so the OTP screen knows who is verifying
+        session()->put('otp_email', $user->email);
+
+        return redirect()->route('verification.notice');
     }
 }

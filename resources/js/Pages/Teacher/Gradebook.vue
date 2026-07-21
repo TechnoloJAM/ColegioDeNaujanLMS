@@ -32,17 +32,12 @@ const getSubmission = (student, assignmentId) => {
     return student.submissions.find(s => s.assignment_id === assignmentId);
 };
 
-// 🪄 THE SECRET TAG LOGIC (Using the new tag!)
+// 🪄 THE SECRET TAG LOGIC
 const isLateEnrollee = (student, assignment) => {
     const desc = assignment.description || '';
-    
-    // Check if the teacher clicked the checkbox (which appended the tag)
     const isHiddenFromLate = desc.includes('[RESTRICT_LATE_STUDENTS]');
     
-    // If the teacher didn't check the box, it is mandatory for everyone!
     if (!isHiddenFromLate) return false; 
-    
-    // If they did check the box, calculate if the student is late
     if (!assignment.due_date) return false; 
     if (!student.pivot || !student.pivot.created_at) return false;
     
@@ -183,9 +178,9 @@ const downloadExcel = () => {
     const wb = XLSX.utils.book_new();
 
     const wsData = [
-        ['', '', '', 'OFFICIAL CLASS RECORD'], 
+        ['OFFICIAL CLASS RECORD', '', '', '', '', '', '', '', ''], 
         [], 
-        ['Course:', props.course.title], 
+        ['Course:', props.course.title, '', '', '', '', '', '', ''], 
         [], 
         [
             'Name of Student', 
@@ -196,10 +191,10 @@ const downloadExcel = () => {
         ],
         [
             'HIGHEST POSSIBLE SCORE', 
-            maxAssignment, '100%', 
-            maxActivity, '100%', 
-            maxPt, '100%', 
-            totalPoints, '100%'
+            String(maxAssignment), '100%', 
+            String(maxActivity), '100%', 
+            String(maxPt), '100%', 
+            String(totalPoints), '100%'
         ]
     ];
 
@@ -226,13 +221,13 @@ const downloadExcel = () => {
 
             wsData.push([
                 student.name,
-                assignmentScore,
+                String(assignmentScore),
                 calculatePS(assignmentScore, maxAssignment),
-                activityScore,
+                String(activityScore),
                 calculatePS(activityScore, maxActivity),
-                ptScore,
+                String(ptScore),
                 calculatePS(ptScore, maxPt),
-                totalScore,
+                String(totalScore),
                 `${percentage}%`
             ]);
         });
@@ -241,6 +236,11 @@ const downloadExcel = () => {
     }
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }, 
+        { s: { r: 2, c: 1 }, e: { r: 2, c: 3 } }  
+    ];
 
     ws['!cols'] = [
         { wch: 35 }, { wch: 18 }, { wch: 15 }, { wch: 18 }, { wch: 15 }, { wch: 24 }, { wch: 15 }, { wch: 20 }, { wch: 20 }
@@ -310,8 +310,8 @@ const downloadExcel = () => {
                     
                     <div v-if="isEditMode" class="p-2 text-center text-xs font-black uppercase tracking-widest border-b transition-colors"
                          :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
-                        <span v-if="hasErrors">❌ Cannot Save: A grade exceeds the maximum score!</span>
-                        <span v-else>✏️ Edit Mode Active: Click "Save Changes" when finished.</span>
+                        <span v-if="hasErrors">Cannot Save: A grade exceeds the maximum score!</span>
+                        <span v-else>Edit Mode Active: Click "Save Changes" when finished.</span>
                     </div>
 
                     <table class="w-full text-left text-sm whitespace-nowrap">
@@ -402,8 +402,8 @@ const downloadExcel = () => {
                     
                     <div v-if="isEditMode" class="p-2 text-center text-[10px] font-black uppercase tracking-widest rounded-lg border shadow-sm mb-2 transition-colors"
                          :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
-                        <span v-if="hasErrors">❌ A grade exceeds max score</span>
-                        <span v-else>✏️ Edit Mode Active</span>
+                        <span v-if="hasErrors">Cannot Save: A grade exceeds max score</span>
+                        <span v-else>Edit Mode Active</span>
                     </div>
 
                     <div v-for="(student, index) in processedStudents" :key="student.id" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
