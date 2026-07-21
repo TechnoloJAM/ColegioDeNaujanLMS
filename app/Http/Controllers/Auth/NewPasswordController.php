@@ -32,38 +32,32 @@ class NewPasswordController extends Controller
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): \Illuminate\Http\RedirectResponse
     {
         $request->validate([
-            'token' => 'required',
             'email' => 'required|email',
-            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'token' => 'required|string|size:6',
+            'password' => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::defaults()],
         ]);
 
-        // Here we will attempt to reset the user's password. If it is successful we
-        // will update the password on an actual user model and persist it to the
-        // database. Otherwise we will parse the error and return the response.
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user) use ($request) {
-                $user->forceFill([
-                    'password' => Hash::make($request->password),
-                    'remember_token' => Str::random(60),
-                ])->save();
+        $otpRecord = \App\Models\OtpToken::where('email', $request->email)
+            ->where('token', $request->token)
+            ->where('purpose', 'password_reset')
+            ->latest()
+            ->first();
 
-                event(new PasswordReset($user));
-            }
-        );
-
-        // If the password was successfully reset, we will redirect the user back to
-        // the application's home authenticated view. If there is an error we can
-        // redirect them back to where they came from with their error message.
-        if ($status == Password::PASSWORD_RESET) {
-            return redirect()->route('login')->with('status', __($status));
+        if (!$otpRecord) return back()->withErrors(['token' => 'Invalid reset code.']);
+        
+        if (\Carbon\Carbon::now()->diffInSeconds($otpRecord->created_at) > 90) {
+            return back()->withErrors(['token' => 'This code has expired. Please request a new one.']);
         }
 
-        throw ValidationException::withMessages([
-            'email' => [trans($status)],
-        ]);
+        $user = \App\Models\User::where('email', $request->email)->first();
+        $user->password = \Illuminate\Support\Facades\Hash::make($request->password);
+        $user->save();
+
+        \App\Models\OtpToken::where('email', $request->email)->delete();
+
+        return redirect()->route('login')->with('status', 'Password successfully reset.');
     }
 }

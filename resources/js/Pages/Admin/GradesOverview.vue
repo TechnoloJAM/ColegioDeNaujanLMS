@@ -11,12 +11,22 @@ const props = defineProps({
 
 const searchQuery = ref('');
 const selectedCourseId = ref('all');
+const selectedTeacher = ref('all');
+
+const uniqueTeachers = computed(() => {
+    const teachers = new Set(props.courses.map(c => c.teacher));
+    return Array.from(teachers).sort();
+});
 
 const filteredCourses = computed(() => {
     let result = props.courses;
 
     if (selectedCourseId.value !== 'all') {
         result = result.filter(c => c.id === selectedCourseId.value);
+    }
+
+    if (selectedTeacher.value !== 'all') {
+        result = result.filter(c => c.teacher === selectedTeacher.value);
     }
 
     if (searchQuery.value) {
@@ -35,22 +45,25 @@ const formatYearLevel = (level) => {
     return levels[level] || level;
 };
 
-// HELPER FORMULA: (Raw Score / Highest Possible Score) * 100
 const calculatePS = (score, max) => {
     if (!max || max === 0) return '0%';
     return ((score / max) * 100).toFixed(1) + '%';
 };
 
-// FULLY FORMATTED .XLSX EXCEL EXPORT WITH PS%
+// FULLY FORMATTED .XLSX EXCEL EXPORT
 const downloadExcel = () => {
     const wb = XLSX.utils.book_new();
 
     filteredCourses.value.forEach(course => {
         const wsData = [
-            ['', '', '', 'OFFICIAL CLASS RECORD'], // Row 1
-            [], // Row 2 (Empty for spacing)
-            ['Course:', course.title, '', '', 'Teacher:', course.teacher], // Row 3
-            [], // Row 4 (Empty for spacing)
+            // Row 1: Main Title (Will be merged)
+            ['OFFICIAL CLASS RECORD', '', '', '', '', '', '', '', ''], 
+            // Row 2: Empty for spacing
+            [], 
+            // Row 3: Course and Teacher Info (Will be merged)
+            ['Course:', course.title, '', '', 'Teacher:', course.teacher, '', '', ''], 
+            // Row 4: Empty for spacing
+            [], 
             
             // Row 5: DepEd Aligned Headers
             [
@@ -61,28 +74,28 @@ const downloadExcel = () => {
                 'Initial Grade (Raw)', 'Quarterly Grade (%)'
             ],
             
-            // Row 6: Highest Possible Scores
+            // Row 6: Highest Possible Scores (Forced as strings for left-alignment)
             [
                 'HIGHEST POSSIBLE SCORE', 
-                course.max_assignment, '100%', 
-                course.max_activity, '100%', 
-                course.max_pt, '100%', 
-                course.total_points, '100%'
+                String(course.max_assignment), '100%', 
+                String(course.max_activity), '100%', 
+                String(course.max_pt), '100%', 
+                String(course.total_points), '100%'
             ]
         ];
 
-        // Row 7+: Add Students and Calculate PS dynamically
+        // Row 7+: Add Students (Scores forced as strings for left-alignment)
         if (course.students && course.students.length > 0) {
             course.students.forEach(student => {
                 wsData.push([
                     student.name,
-                    student.assignment_score,
+                    String(student.assignment_score),
                     calculatePS(student.assignment_score, course.max_assignment),
-                    student.activity_score,
+                    String(student.activity_score),
                     calculatePS(student.activity_score, course.max_activity),
-                    student.pt_score,
+                    String(student.pt_score),
                     calculatePS(student.pt_score, course.max_pt),
-                    student.total_score,
+                    String(student.total_score),
                     `${student.percentage}%`
                 ]);
             });
@@ -92,9 +105,16 @@ const downloadExcel = () => {
 
         const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-        // Set exact column widths so text is NEVER cut off and PS columns fit nicely
+        // NEW: Merge Cells to make the headers look like a professional document
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }, // Merge "OFFICIAL CLASS RECORD" across all 9 columns
+            { s: { r: 2, c: 1 }, e: { r: 2, c: 3 } }, // Merge Course Title across 3 columns
+            { s: { r: 2, c: 5 }, e: { r: 2, c: 7 } }, // Merge Teacher Name across 3 columns
+        ];
+
+        // Ensure columns are wide enough
         ws['!cols'] = [
-            { wch: 35 }, // A: Name of Student
+            { wch: 35 }, // A: Name
             { wch: 18 }, // B: Assign Raw
             { wch: 15 }, // C: Assign PS
             { wch: 18 }, // D: Activity Raw
@@ -148,6 +168,11 @@ const downloadExcel = () => {
                         class="w-full pl-9 pr-4 py-2 sm:py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 transition shadow-sm" />
                 </div>
                 
+                <select v-model="selectedTeacher" class="w-full sm:w-auto sm:min-w-[160px] py-2 sm:py-1.5 px-3 text-[10px] sm:text-xs font-bold uppercase tracking-widest sm:tracking-normal sm:normal-case rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer">
+                    <option value="all">All Instructors</option>
+                    <option v-for="teacher in uniqueTeachers" :key="teacher" :value="teacher">{{ teacher }}</option>
+                </select>
+
                 <select v-model="selectedCourseId" class="w-full sm:w-auto sm:min-w-[200px] py-2 sm:py-1.5 px-3 text-[10px] sm:text-xs font-bold uppercase tracking-widest sm:tracking-normal sm:normal-case rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer">
                     <option value="all">All Courses</option>
                     <option v-for="c in courses" :key="c.id" :value="c.id">{{ c.title }}</option>

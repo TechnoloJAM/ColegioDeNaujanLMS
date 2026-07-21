@@ -27,25 +27,24 @@ class PasswordResetLinkController extends Controller
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): \Illuminate\Http\RedirectResponse
     {
-        $request->validate([
-            'email' => 'required|email',
+        $request->validate(['email' => 'required|email|exists:users,email']);
+
+        \App\Models\OtpToken::where('email', $request->email)->where('purpose', 'password_reset')->delete();
+        
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        
+        \App\Models\OtpToken::create([
+            'email' => $request->email,
+            'token' => $code,
+            'purpose' => 'password_reset',
         ]);
 
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message we
-        // need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        \Illuminate\Support\Facades\Mail::to($request->email)->send(new \App\Mail\OtpMail($code));
 
-        if ($status == Password::RESET_LINK_SENT) {
-            return back()->with('status', __($status));
-        }
+        session()->put('reset_email', $request->email);
 
-        throw ValidationException::withMessages([
-            'email' => [trans($status)],
-        ]);
+        return redirect()->route('password.reset.otp');
     }
 }
