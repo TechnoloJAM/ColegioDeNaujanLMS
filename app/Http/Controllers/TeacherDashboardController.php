@@ -6,7 +6,7 @@ use App\Models\Course;
 use App\Models\User;
 use App\Models\Submission;
 use App\Models\Assignment;
-use App\Models\Enrollment; // ADDED THIS
+use App\Models\Enrollment;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -46,7 +46,7 @@ class TeacherDashboardController extends Controller
                 return $assignment->ungraded_count > 0;
             })
             ->sortByDesc('ungraded_count')
-            ->take(5)
+            // REMOVED: ->take(5) so the frontend has ALL data for the "See All" modal
             ->values()
             ->map(function($assignment) {
                 return [
@@ -65,8 +65,113 @@ class TeacherDashboardController extends Controller
             ->where('due_date', '>=', now())
             ->orderBy('due_date', 'asc')
             ->with('course:id,title')
-            ->limit(4)
+            // REMOVED: ->limit(4) so the frontend has ALL data for the "See All" modal
             ->get();
+
+        // ==========================================
+        // NEW: Broadcast, Health & Insights Logic
+        // ==========================================
+
+        // A. Courses for Quick Broadcast Dropdown
+        $broadcastCourses = Course::where('teacher_id', $teacherId)
+            ->where('is_published', true)
+            ->select('id', 'title')
+            ->orderBy('title')
+            ->get();
+
+        // B. Classroom Health Calculations
+        $coursesWithHealth = Course::where('teacher_id', $teacherId)
+            ->where('is_published', true)
+            ->with(['assignments', 'enrollments' => function($q) {
+                $q->where('status', 'approved')->with('user.submissions');
+            }])->get();
+
+        $classroomHealth = [];
+        $totalFailingStudents = 0;
+        $totalMissingTasks = 0;
+        $mostStrugglingCourse = null;
+        $highestFailingCount = 0;
+
+        foreach ($coursesWithHealth as $course) {
+            $failingCount = 0;
+            $missingTaskCount = 0;
+            $coursePoints = $course->assignments->sum('points');
+
+            foreach ($course->enrollments as $enrollment) {
+                if ($student = $enrollment->user) {
+                    
+                    // Metric 1: Failing Students (< 75%)
+                    if ($coursePoints > 0) {
+                        $earned = $student->submissions->whereIn('assignment_id', $course->assignments->pluck('id'))->sum('grade');
+                        $avg = ($earned / $coursePoints) * 100;
+                        if ($avg < 75) {
+                            $failingCount++;
+                        }
+                    }
+
+                    // Metric 2: Missing Past-Due Tasks
+                    $pastDueAssignments = $course->assignments->filter(function($a) {
+                        return $a->due_date && $a->due_date < now();
+                    });
+
+                    foreach($pastDueAssignments as $assignment) {
+                        $isLate = false;
+                        // Prevent flagging late enrollees as missing tasks
+                        if (str_contains($assignment->description ?? '', '[RESTRICT_LATE_STUDENTS]')) {
+                            $enrollDate = $enrollment->created_at ?? $enrollment->enrolled_at;
+                            if ($enrollDate > $assignment->due_date) {
+                                $isLate = true;
+                            }
+                        }
+
+                        if (!$isLate) {
+                            $hasSubmitted = $student->submissions->where('assignment_id', $assignment->id)->isNotEmpty();
+                            if (!$hasSubmitted) {
+                                $missingTaskCount++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Only add course to health card if there are red flags
+            if ($failingCount > 0 || $missingTaskCount > 0) {
+                $classroomHealth[] = [
+                    'id' => $course->id,
+                    'title' => $course->title,
+                    'failing_count' => $failingCount,
+                    'missing_tasks' => $missingTaskCount
+                ];
+
+                $totalFailingStudents += $failingCount;
+                $totalMissingTasks += $missingTaskCount;
+
+                if ($failingCount > $highestFailingCount) {
+                    $highestFailingCount = $failingCount;
+                    $mostStrugglingCourse = $course->title;
+                }
+            }
+        }
+
+        // C. AI Insights Smart Logic
+        $aiInsight = "Your classrooms are looking healthy today. Keep up the great work!";
+        if ($totalFailingStudents > 0 || $totalMissingTasks > 0) {
+            $parts = [];
+            if ($totalFailingStudents > 0) {
+                $parts[] = "{$totalFailingStudents} students falling below the 75% passing mark";
+            }
+            if ($totalMissingTasks > 0) {
+                $parts[] = "{$totalMissingTasks} missing past-due submissions";
+            }
+
+            $insight = "Action needed: You have " . implode(" and ", $parts) . ". ";
+
+            if ($mostStrugglingCourse) {
+                $insight .= "'{$mostStrugglingCourse}' needs the most immediate attention.";
+            }
+
+            $aiInsight = $insight;
+        }
 
         return Inertia::render('Teacher/Dashboard', [
             'stats' => [
@@ -75,7 +180,10 @@ class TeacherDashboardController extends Controller
                 'pending_submissions' => $pendingSubmissions,
             ],
             'grading_queue' => $gradingQueue,
-            'upcoming_assignments' => $upcomingAssignments
+            'upcoming_assignments' => $upcomingAssignments,
+            'broadcast_courses' => $broadcastCourses,
+            'classroom_health' => collect($classroomHealth)->sortByDesc('failing_count')->values()->toArray(),
+            'ai_insight' => $aiInsight
         ]);
     }
 }

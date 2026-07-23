@@ -2,7 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router } from '@inertiajs/vue3';
 import { Download, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock } from 'lucide-vue-next';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 
@@ -21,6 +21,13 @@ const isSaving = ref(false);
 const pendingGrades = ref({});
 const validationErrors = ref({}); 
 
+onMounted(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('sort')) {
+        sortOrder.value = params.get('sort');
+    }
+});
+
 const hasErrors = computed(() => Object.keys(validationErrors.value).length > 0);
 
 const toggleStudent = (studentId) => {
@@ -32,7 +39,6 @@ const getSubmission = (student, assignmentId) => {
     return student.submissions.find(s => s.assignment_id === assignmentId);
 };
 
-// 🪄 THE SECRET TAG LOGIC
 const isLateEnrollee = (student, assignment) => {
     const desc = assignment.description || '';
     const isHiddenFromLate = desc.includes('[RESTRICT_LATE_STUDENTS]');
@@ -116,28 +122,49 @@ const toggleEditMode = async () => {
     }
 };
 
-const getStudentAverage = (student) => {
-    let totalScore = 0;
-    let totalMax = 0;
-    
+const maxCategoryPoints = computed(() => {
+    let assign = 0, act = 0, pt = 0, total = 0;
     props.assignments.forEach(a => {
-        const sub = getSubmission(student, a.id);
-        if (sub && sub.grade !== null) { 
-            totalScore += parseFloat(sub.grade); 
-            totalMax += parseFloat(a.points); 
-        }
+        const pts = Number(a.points) || 0;
+        total += pts;
+        if (a.type === 'assignment') assign += pts;
+        else if (a.type === 'activity') act += pts;
+        else if (a.type === 'performance_task') pt += pts;
     });
-    
-    return totalMax === 0 ? 0 : ((totalScore / totalMax) * 100).toFixed(1);
+    return { assign, act, pt, total };
+});
+
+const calculatePS = (score, max) => {
+    if (!max || max === 0) return 0;
+    return ((score / max) * 100).toFixed(1);
 };
 
 const processedStudents = computed(() => {
     if (!props.students) return [];
     
     let list = props.students.map(student => {
+        let assignScore = 0, actScore = 0, ptScore = 0, totalScore = 0;
+        
+        props.assignments.forEach(a => {
+            const val = getInputValue(student.id, a.id);
+            const pts = (val !== '' && val !== null && !isNaN(val)) ? parseFloat(val) : 0;
+            
+            totalScore += pts;
+            if (a.type === 'assignment') assignScore += pts;
+            else if (a.type === 'activity') actScore += pts;
+            else if (a.type === 'performance_task') ptScore += pts;
+        });
+
         return {
             ...student,
-            numericAverage: parseFloat(getStudentAverage(student))
+            assignScore,
+            assignPS: calculatePS(assignScore, maxCategoryPoints.value.assign),
+            actScore,
+            actPS: calculatePS(actScore, maxCategoryPoints.value.act),
+            ptScore,
+            ptPS: calculatePS(ptScore, maxCategoryPoints.value.pt),
+            totalScore,
+            numericAverage: maxCategoryPoints.value.total > 0 ? parseFloat(calculatePS(totalScore, maxCategoryPoints.value.total)) : 0
         };
     });
 
@@ -158,97 +185,66 @@ const switchCourse = (e) => {
     }
 };
 
-const calculatePS = (score, max) => {
-    if (!max || max === 0) return '0%';
-    return ((score / max) * 100).toFixed(1) + '%';
-};
-
 const downloadExcel = () => {
     if (!props.course || !props.assignments || !props.students) return;
 
-    let maxAssignment = 0, maxActivity = 0, maxPt = 0, totalPoints = 0;
-    props.assignments.forEach(task => {
-        const points = Number(task.points) || 0;
-        totalPoints += points;
-        if (task.type === 'assignment') maxAssignment += points;
-        else if (task.type === 'activity') maxActivity += points;
-        else if (task.type === 'performance_task') maxPt += points;
-    });
-
     const wb = XLSX.utils.book_new();
 
+    // Dynamically map all task titles and their max points for the headers
+    const taskHeaders = props.assignments.map(a => a.title);
+    const taskMaxes = props.assignments.map(a => String(a.points));
+
     const wsData = [
-        ['OFFICIAL CLASS RECORD', '', '', '', '', '', '', '', ''], 
+        ['OFFICIAL CLASS RECORD'], 
         [], 
-        ['Course:', props.course.title, '', '', '', '', '', '', ''], 
+        ['Course:', props.course.title], 
         [], 
         [
             'Name of Student', 
-            'Assignments (Raw)', 'Assign. PS (%)', 
+            ...taskHeaders, // Splays every individual task as a column
+            'Assign (Raw)', 'Assign PS (%)', 
             'Activities (Raw)', 'Activity PS (%)', 
-            'Performance Tasks (Raw)', 'PT PS (%)', 
-            'Initial Grade (Raw)', 'Quarterly Grade (%)'
+            'PT (Raw)', 'PT PS (%)', 
+            'Total Raw', 'Quarterly Grade (%)'
         ],
         [
             'HIGHEST POSSIBLE SCORE', 
-            String(maxAssignment), '100%', 
-            String(maxActivity), '100%', 
-            String(maxPt), '100%', 
-            String(totalPoints), '100%'
+            ...taskMaxes, // Splays the max points for each task
+            String(maxCategoryPoints.value.assign), '100%', 
+            String(maxCategoryPoints.value.act), '100%', 
+            String(maxCategoryPoints.value.pt), '100%', 
+            String(maxCategoryPoints.value.total), '100%'
         ]
     ];
 
-    if (props.students.length > 0) {
-        props.students.forEach(student => {
-            let assignmentScore = 0, activityScore = 0, ptScore = 0, totalScore = 0;
+    if (processedStudents.value.length > 0) {
+        // Use the pre-calculated processedStudents so sorting is maintained
+        processedStudents.value.forEach(student => {
+            const row = [student.name];
 
-            const submissionsMap = {};
-            if (student.submissions) {
-                student.submissions.forEach(sub => {
-                    submissionsMap[sub.assignment_id] = Number(sub.grade) || 0;
-                });
-            }
-
-            props.assignments.forEach(task => {
-                const earned = submissionsMap[task.id] || 0;
-                totalScore += earned;
-                if (task.type === 'assignment') assignmentScore += earned;
-                else if (task.type === 'activity') activityScore += earned;
-                else if (task.type === 'performance_task') ptScore += earned;
+            // 1. Push individual task scores
+            props.assignments.forEach(a => {
+                const val = getInputValue(student.id, a.id);
+                row.push((val !== '' && val !== null) ? String(val) : '0');
             });
 
-            const percentage = totalPoints > 0 ? ((totalScore / totalPoints) * 100).toFixed(1) : 0;
+            // 2. Push category summaries
+            row.push(
+                String(student.assignScore), student.assignPS + '%',
+                String(student.actScore), student.actPS + '%',
+                String(student.ptScore), student.ptPS + '%',
+                String(student.totalScore), student.numericAverage + '%'
+            );
 
-            wsData.push([
-                student.name,
-                String(assignmentScore),
-                calculatePS(assignmentScore, maxAssignment),
-                String(activityScore),
-                calculatePS(activityScore, maxActivity),
-                String(ptScore),
-                calculatePS(ptScore, maxPt),
-                String(totalScore),
-                `${percentage}%`
-            ]);
+            wsData.push(row);
         });
     } else {
         wsData.push(['No students enrolled.']);
     }
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-    ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }, 
-        { s: { r: 2, c: 1 }, e: { r: 2, c: 3 } }  
-    ];
-
-    ws['!cols'] = [
-        { wch: 35 }, { wch: 18 }, { wch: 15 }, { wch: 18 }, { wch: 15 }, { wch: 24 }, { wch: 15 }, { wch: 20 }, { wch: 20 }
-    ];
-
     let safeSheetName = props.course.title.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
     XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
-
     XLSX.writeFile(wb, `${props.course.title.replace(/\s+/g, '_')}_Gradebook.xlsx`);
 };
 </script>
@@ -257,7 +253,7 @@ const downloadExcel = () => {
     <Head :title="course ? `Gradebook - ${course.title}` : 'Gradebook'" />
     
     <AuthenticatedLayout>
-        <div class="max-w-screen-2xl mx-auto pb-12 px-4 sm:px-6">
+        <div class="max-w-[100vw] mx-auto pb-12 px-4 sm:px-6">
             
             <div v-if="course" class="flex flex-col md:flex-row justify-between md:items-end gap-3 mb-4 sm:mb-6 border-b border-slate-100 dark:border-slate-800 pb-3">
                 <div class="w-full md:w-auto">
@@ -270,7 +266,6 @@ const downloadExcel = () => {
                 </div>
                 
                 <div class="flex items-center gap-2 w-full md:w-auto shrink-0 flex-wrap">
-                    
                     <div class="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm flex-1 md:flex-none">
                         <ArrowUpDown class="w-3.5 h-3.5 text-slate-400 ml-2 shrink-0" />
                         <select v-model="sortOrder" class="w-full text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 bg-transparent border-none focus:ring-0 cursor-pointer py-2 pl-1.5 pr-6">
@@ -284,7 +279,6 @@ const downloadExcel = () => {
                     <button @click="toggleEditMode"
                             :class="isEditMode ? (hasErrors ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white') : 'bg-blue-600 hover:bg-blue-500 text-white'"
                             class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-sm transition shrink-0 disabled:opacity-50">
-                        
                         <svg v-if="isSaving" class="animate-spin w-3.5 h-3.5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -292,7 +286,6 @@ const downloadExcel = () => {
                         <svg v-else-if="!isEditMode" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                         <svg v-else-if="hasErrors" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                        
                         <span class="hidden sm:inline">
                             {{ isSaving ? 'Saving...' : (isEditMode ? (hasErrors ? 'Fix Errors to Save' : 'Save Changes') : 'Edit Grades') }}
                         </span>
@@ -317,38 +310,52 @@ const downloadExcel = () => {
                     <table class="w-full text-left text-sm whitespace-nowrap">
                         <thead class="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-700 uppercase text-[9px] font-black text-slate-500 tracking-widest">
                             <tr>
-                                <th class="p-4 sticky left-0 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-10 w-48 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                <th class="p-3 sticky left-0 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-10 w-48 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                                     Student Name
                                 </th>
-                                <th v-for="a in assignments" :key="a.id" class="p-3 min-w-[120px] border-r border-slate-100 dark:border-slate-800 text-center">
-                                    <span class="block truncate max-w-[150px] text-slate-700 dark:text-slate-300" :title="a.title">{{ a.title }}</span>
-                                    <span class="text-[9px] text-blue-600 dark:text-blue-400 mt-1 block">Out of {{ a.points }}</span>
+                                <!-- INDIVIDUAL ASSIGNMENTS (COMPACT) -->
+                                <th v-for="a in assignments" :key="a.id" class="p-2 min-w-[90px] border-r border-slate-200 dark:border-slate-700 text-center bg-white dark:bg-slate-800">
+                                    <span class="block truncate max-w-[120px] text-slate-700 dark:text-slate-300" :title="a.title">{{ a.title }}</span>
+                                    <span class="text-[8px] text-blue-600 dark:text-blue-400 mt-0.5 block">Max {{ a.points }}</span>
                                 </th>
-                                <th class="p-4 bg-blue-50/50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-center w-24">
-                                    Average
+                                
+                                <!-- COMPACT CATEGORY SUMMARIES -->
+                                <th class="p-2 min-w-[80px] border-r border-slate-200 dark:border-slate-700 text-center bg-blue-50/50 dark:bg-blue-900/20">
+                                    <span class="block text-blue-800 dark:text-blue-300">Assignment</span>
+                                    <span class="text-[8px] text-blue-600 dark:text-blue-400 mt-0.5 block">Max {{ maxCategoryPoints.assign }}</span>
+                                </th>
+                                <th class="p-2 min-w-[80px] border-r border-slate-200 dark:border-slate-700 text-center bg-purple-50/50 dark:bg-purple-900/20">
+                                    <span class="block text-purple-800 dark:text-purple-300">Act.</span>
+                                    <span class="text-[8px] text-purple-600 dark:text-purple-400 mt-0.5 block">Max {{ maxCategoryPoints.act }}</span>
+                                </th>
+                                <th class="p-2 min-w-[80px] border-r border-slate-200 dark:border-slate-700 text-center bg-orange-50/50 dark:bg-orange-900/20">
+                                    <span class="block text-orange-800 dark:text-orange-300">Perf. Task</span>
+                                    <span class="text-[8px] text-orange-600 dark:text-orange-400 mt-0.5 block">Max {{ maxCategoryPoints.pt }}</span>
+                                </th>
+                                <th class="p-2 min-w-[80px] border-l border-emerald-200 dark:border-emerald-800 text-center bg-emerald-50/50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-400">
+                                    <span class="block">Overall</span>
+                                    <span class="text-[8px] text-emerald-600 dark:text-emerald-400 mt-0.5 block">Max {{ maxCategoryPoints.total }}</span>
                                 </th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                             <tr v-for="(student, index) in processedStudents" :key="student.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition">
                                 
-                                <td class="p-4 font-bold text-xs text-slate-900 dark:text-white sticky left-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-10 truncate max-w-[12rem] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] flex items-center gap-2">
-                                    <div class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-[9px] shrink-0">
+                                <td class="p-3 font-bold text-[11px] text-slate-900 dark:text-white sticky left-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-10 truncate max-w-[12rem] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] flex items-center gap-2">
+                                    <div class="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center text-[8px] shrink-0">
                                         {{ index + 1 }}
                                     </div>
                                     {{ student.name }}
                                 </td>
                                 
-                                <td v-for="a in assignments" :key="a.id" class="p-2 border-r border-slate-100 dark:border-slate-800 relative" :class="!isEditMode ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''">
-                                    
+                                <td v-for="a in assignments" :key="a.id" class="p-1 border-r border-slate-100 dark:border-slate-800 relative" :class="!isEditMode ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''">
                                     <template v-if="getSubmission(student, a.id)">
-                                        <div class="flex items-center justify-center gap-1.5">
+                                        <div class="flex items-center justify-center gap-1">
                                             <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission" 
-                                               class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition">
-                                                <FileText class="w-4 h-4 shrink-0" />
+                                               class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition ml-1">
+                                                <FileText class="w-3.5 h-3.5 shrink-0" />
                                             </a>
-
-                                            <div class="flex-1">
+                                            <div class="flex-1 px-1">
                                                 <template v-if="isEditMode">
                                                     <input 
                                                         type="number" 
@@ -357,13 +364,13 @@ const downloadExcel = () => {
                                                         :max="a.points"
                                                         :value="getInputValue(student.id, a.id)"
                                                         @input="updatePendingGrade(student.id, a.id, a.points, $event)"
-                                                        class="w-full text-center border-0 bg-transparent focus:ring-2 focus:ring-inset rounded text-xs font-bold transition-colors"
+                                                        class="w-full text-center border-0 bg-transparent focus:ring-2 focus:ring-inset rounded text-[11px] font-bold transition-colors py-1"
                                                         :class="validationErrors[`${student.id}_${a.id}`] ? 'text-red-600 focus:ring-red-500 bg-red-50 dark:bg-red-900/40 dark:text-red-400' : 'text-slate-700 dark:text-slate-200 focus:ring-blue-500 placeholder-slate-300 dark:placeholder-slate-600'"
                                                         placeholder="-"
                                                     />
                                                 </template>
                                                 <template v-else>
-                                                    <div class="w-full text-center py-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 cursor-not-allowed">
+                                                    <div class="w-full text-center py-1 text-[11px] font-bold text-slate-500 dark:text-slate-400 cursor-not-allowed">
                                                         {{ getSubmission(student, a.id)?.grade ?? '-' }}
                                                     </div>
                                                 </template>
@@ -372,25 +379,39 @@ const downloadExcel = () => {
                                     </template>
                                     
                                     <template v-else>
-                                        <div v-if="isLateEnrollee(student, a)" class="w-full text-center py-1 flex items-center justify-center gap-1 text-[8px] font-black text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/50 rounded uppercase tracking-widest cursor-not-allowed border border-slate-200 dark:border-slate-700" title="Task hidden: The deadline passed before this student enrolled.">
-                                            <Clock class="w-3 h-3" /> Late Enrollee
+                                        <div v-if="isLateEnrollee(student, a)" class="w-full text-center py-1 flex items-center justify-center gap-1 text-[7px] font-black text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/50 rounded uppercase tracking-widest cursor-not-allowed mx-1 border border-slate-200 dark:border-slate-700" title="Task hidden: The deadline passed before this student enrolled.">
+                                            <Clock class="w-2.5 h-2.5" /> Late
                                         </div>
-                                        <div v-else class="w-full text-center py-1.5 text-[10px] font-black text-red-400 dark:text-red-500/80 uppercase tracking-widest cursor-not-allowed" title="No submission found">
+                                        <div v-else class="w-full text-center py-1 text-[8px] font-black text-red-400 dark:text-red-500/80 uppercase tracking-widest cursor-not-allowed" title="No submission found">
                                             Missing
                                         </div>
                                     </template>
+                                </td>
 
+                                <!-- COMPACT CATEGORY CELLS -->
+                                <td class="p-2 text-center border-r border-slate-200 dark:border-slate-700 bg-blue-50/20 dark:bg-blue-900/10">
+                                    <div class="font-black text-blue-600 dark:text-blue-400 text-[11px]">{{ student.assignPS }}%</div>
+                                    <div class="font-bold text-slate-500 dark:text-slate-400 text-[8px] mt-0.5">{{ student.assignScore }} Raw</div>
+                                </td>
+                                <td class="p-2 text-center border-r border-slate-200 dark:border-slate-700 bg-purple-50/20 dark:bg-purple-900/10">
+                                    <div class="font-black text-purple-600 dark:text-purple-400 text-[11px]">{{ student.actPS }}%</div>
+                                    <div class="font-bold text-slate-500 dark:text-slate-400 text-[8px] mt-0.5">{{ student.actScore }} Raw</div>
+                                </td>
+                                <td class="p-2 text-center border-r border-slate-200 dark:border-slate-700 bg-orange-50/20 dark:bg-orange-900/10">
+                                    <div class="font-black text-orange-600 dark:text-orange-400 text-[11px]">{{ student.ptPS }}%</div>
+                                    <div class="font-bold text-slate-500 dark:text-slate-400 text-[8px] mt-0.5">{{ student.ptScore }} Raw</div>
                                 </td>
                                 
-                                <td class="p-4 text-center text-xs font-black border-l border-slate-200 dark:border-slate-700">
-                                    <span class="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" 
+                                <td class="p-2 text-center border-l border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-900/20">
+                                    <span class="text-[11px] font-black block" 
                                         :class="{
-                                            'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400': student.numericAverage >= 85,
-                                            'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400': student.numericAverage >= 75 && student.numericAverage < 85,
-                                            'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': student.numericAverage < 75
+                                            'text-emerald-600 dark:text-emerald-400': student.numericAverage >= 85,
+                                            'text-yellow-600 dark:text-yellow-400': student.numericAverage >= 75 && student.numericAverage < 85,
+                                            'text-red-600 dark:text-red-400': student.numericAverage < 75
                                         }">
                                         {{ student.numericAverage }}%
                                     </span>
+                                    <span class="font-bold text-slate-500 dark:text-slate-400 text-[8px] mt-0.5 block">{{ student.totalScore }} Raw</span>
                                 </td>
                                 
                             </tr>
@@ -398,6 +419,7 @@ const downloadExcel = () => {
                     </table>
                 </div>
 
+                <!-- MOBILE VIEW -->
                 <div class="md:hidden flex flex-col gap-2">
                     
                     <div v-if="isEditMode" class="p-2 text-center text-[10px] font-black uppercase tracking-widest rounded-lg border shadow-sm mb-2 transition-colors"
@@ -466,15 +488,29 @@ const downloadExcel = () => {
 
                                 <template v-else>
                                     <div v-if="isLateEnrollee(student, a)" class="w-full h-7 flex items-center justify-center gap-1.5 rounded bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 text-[9px] font-black uppercase tracking-widest cursor-not-allowed border border-slate-200 dark:border-slate-700" title="Task hidden: The deadline passed before this student enrolled.">
-                                        <Clock class="w-3 h-3" /> Late Enrollee
+                                        <Clock class="w-3 h-3" /> Late
                                     </div>
                                     <div v-else class="w-full h-7 flex items-center justify-center rounded bg-red-50 dark:bg-red-900/20 text-red-400 dark:text-red-500/80 text-[9px] font-black uppercase tracking-widest cursor-not-allowed border border-red-100 dark:border-red-900/30">
                                         Missing
                                     </div>
                                 </template>
-
                             </div>
-                            <div v-if="assignments.length === 0" class="text-center py-3 text-slate-400 text-[9px] uppercase font-black tracking-widest col-span-full">No assignments to grade.</div>
+
+                            <!-- COMPACT MOBILE CATEGORY BREAKDOWN -->
+                            <div class="col-span-2 grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                                <div class="text-center bg-blue-50/50 dark:bg-blue-900/10 p-2 rounded border border-blue-100 dark:border-blue-800/30">
+                                    <span class="block text-[8px] font-black uppercase text-blue-500">Ass. PS</span>
+                                    <span class="block text-[11px] font-black text-blue-600 dark:text-blue-400 mt-0.5">{{ student.assignPS }}%</span>
+                                </div>
+                                <div class="text-center bg-purple-50/50 dark:bg-purple-900/10 p-2 rounded border border-purple-100 dark:border-purple-800/30">
+                                    <span class="block text-[8px] font-black uppercase text-purple-500">Act. PS</span>
+                                    <span class="block text-[11px] font-black text-purple-600 dark:text-purple-400 mt-0.5">{{ student.actPS }}%</span>
+                                </div>
+                                <div class="text-center bg-orange-50/50 dark:bg-orange-900/10 p-2 rounded border border-orange-100 dark:border-orange-800/30">
+                                    <span class="block text-[8px] font-black uppercase text-orange-500">PT. PS</span>
+                                    <span class="block text-[11px] font-black text-orange-600 dark:text-orange-400 mt-0.5">{{ student.ptPS }}%</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

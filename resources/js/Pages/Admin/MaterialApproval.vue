@@ -20,6 +20,10 @@ const selectedMaterialPath = ref(null);
 
 const sortOrder = ref('desc');
 const selectedCourseFilter = ref('all');
+
+const selectedSemesterFilter = ref('all');
+const selectedInstructorFilter = ref('all');
+
 const showCourseDropdown = ref(false);
 
 const openMaterialPreview = (path) => {
@@ -51,11 +55,25 @@ const availableCourses = computed(() => {
     }));
 });
 
+const availableInstructors = computed(() => {
+    const instructors = {};
+    props.materials.forEach(m => {
+        if (m.course && m.course.teacher) {
+            instructors[m.course.teacher.id] = m.course.teacher.name;
+        }
+    });
+    return Object.entries(instructors).map(([id, name]) => ({
+        id: Number(id),
+        name: name
+    })).sort((a, b) => a.name.localeCompare(b.name));
+});
+
 const showEditModal = ref(false);
 const lessonToEdit = ref(null);
 
 const editForm = useForm({
     title: '',
+    semester: '1st',
     available_from: '',
     available_until: ''
 });
@@ -70,6 +88,7 @@ const formatForInput = (dateStr) => {
 const openEditModal = (lesson) => {
     lessonToEdit.value = lesson;
     editForm.title = lesson.title;
+    editForm.semester = lesson.semester ? lesson.semester : '1st';
     editForm.available_from = formatForInput(lesson.available_from) || formatForInput(new Date());
     editForm.available_until = formatForInput(lesson.available_until);
     editForm.clearErrors();
@@ -121,11 +140,16 @@ const submitUnarchive = () => {
     });
 };
 
+// FIXED: Handles null database values by treating them as 1st semester
 const baseFilteredMaterials = computed(() => {
-    if (selectedCourseFilter.value === 'all') {
-        return props.materials;
-    }
-    return props.materials.filter(m => m.course_id === selectedCourseFilter.value);
+    return props.materials.filter(m => {
+        const matSem = m.semester || '1st'; 
+
+        if (selectedCourseFilter.value !== 'all' && m.course_id !== selectedCourseFilter.value) return false;
+        if (selectedSemesterFilter.value !== 'all' && matSem !== selectedSemesterFilter.value) return false;
+        if (selectedInstructorFilter.value !== 'all' && m.course?.teacher?.id !== selectedInstructorFilter.value) return false;
+        return true;
+    });
 });
 
 const pendingMaterials = computed(() => baseFilteredMaterials.value.filter(m => m.approval_status === 'pending'));
@@ -166,8 +190,7 @@ const groupedMaterials = computed(() => {
     return groups;
 });
 
-watch(activeTab, () => { selectedIds.value = []; });
-watch(selectedCourseFilter, () => { selectedIds.value = []; });
+watch([activeTab, selectedCourseFilter, selectedSemesterFilter, selectedInstructorFilter], () => { selectedIds.value = []; });
 
 const toggleSelection = (id) => {
     if (selectedIds.value.includes(id)) selectedIds.value = selectedIds.value.filter(i => i !== id);
@@ -263,8 +286,8 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
         <div class="max-w-6xl space-y-3">
             
-            <div class="flex flex-col lg:flex-row gap-2">
-                <!-- TABS (Overflow auto enabled here) -->
+            <div class="flex flex-col lg:flex-row gap-2.5">
+                <!-- TABS -->
                 <div class="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg gap-1 overflow-x-auto shadow-sm border border-slate-200 dark:border-slate-700 flex-1 scrollbar-hide">
                     <button @click="activeTab = 'pending'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'pending' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
                         Pending <span v-if="pendingMaterials.length" class="bg-orange-100 text-orange-600 px-1 rounded text-[8px]">{{ pendingMaterials.length }}</span>
@@ -280,13 +303,30 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     </button>
                 </div>
 
-                <!-- FILTERS (Flex-wrap instead of overflow hidden to prevent cutoff dropdowns) -->
-                <div class="flex gap-2 w-full lg:w-auto flex-wrap sm:flex-nowrap relative z-50">
+                <!-- FIXED: Grid layout on mobile prevents the screen-crashing horizontal stretch -->
+                <div class="grid grid-cols-2 lg:flex lg:flex-row gap-1.5 sm:gap-2 w-full lg:w-auto relative z-50">
                     
-                    <!-- CUSTOM COURSE FILTER DROPDOWN -->
-                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[140px] flex-1 sm:flex-none relative cursor-pointer select-none" @click="showCourseDropdown = !showCourseDropdown">
-                        
-                        <!-- Notification dot indicating dropdown has pending items -->
+                    <!-- SEMESTER FILTER -->
+                    <div class="col-span-1 lg:w-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-0">
+                        <svg class="w-3.5 h-3.5 text-purple-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                        <select v-model="selectedSemesterFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
+                            <option value="all">All Semesters</option>
+                            <option value="1st">1st Semester</option>
+                            <option value="2nd">2nd Semester</option>
+                        </select>
+                    </div>
+
+                    <!-- INSTRUCTOR FILTER -->
+                    <div class="col-span-1 lg:w-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-0">
+                        <svg class="w-3.5 h-3.5 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                        <select v-model="selectedInstructorFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
+                            <option value="all">All Instructors</option>
+                            <option v-for="instructor in availableInstructors" :key="instructor.id" :value="instructor.id">{{ instructor.name }}</option>
+                        </select>
+                    </div>
+
+                    <!-- COURSE FILTER DROPDOWN -->
+                    <div class="col-span-2 lg:col-span-1 lg:w-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-0 relative cursor-pointer select-none" @click="showCourseDropdown = !showCourseDropdown">
                         <span v-if="pendingMaterials.length > 0 && selectedCourseFilter === 'all'" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm border border-white dark:border-slate-800"></span>
                         <span v-else-if="selectedCourseFilter !== 'all' && availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount > 0" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm border border-white dark:border-slate-800"></span>
                         
@@ -296,7 +336,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             <span class="truncate pr-1">
                                 {{ selectedCourseFilter === 'all' ? 'All Courses' : availableCourses.find(c => c.id === selectedCourseFilter)?.title }}
                             </span>
-                            <!-- Active selection badge -->
                             <span v-if="selectedCourseFilter !== 'all' && availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount > 0" class="bg-red-500 text-white px-1 py-0.5 rounded text-[7px] shadow-sm shrink-0">
                                 {{ availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount }}
                             </span>
@@ -305,10 +344,8 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             </span>
                         </div>
 
-                        <!-- Invisible backdrop to close dropdown when clicking outside -->
                         <div v-if="showCourseDropdown" @click.stop="showCourseDropdown = false" class="fixed inset-0 z-40"></div>
 
-                        <!-- Custom Dropdown Options -->
                         <transition enter-active-class="transition ease-out duration-100" enter-from-class="opacity-0 scale-95" enter-to-class="opacity-100 scale-100" leave-active-class="transition ease-in duration-75" leave-from-class="opacity-100 scale-100" leave-to-class="opacity-0 scale-95">
                             <div v-if="showCourseDropdown" class="absolute top-full left-0 mt-1 w-full sm:w-60 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-[60] py-1 overflow-y-auto max-h-48 custom-scrollbar">
                                 <div @click.stop="setCourseFilter('all')" class="px-2.5 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex justify-between items-center cursor-pointer border-b border-slate-100 dark:border-slate-700/50">
@@ -324,9 +361,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     </div>
 
                     <!-- SORT FILTER -->
-                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[130px] flex-1 sm:flex-none relative z-[50]">
+                    <div class="col-span-2 lg:col-span-1 lg:w-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-0">
                         <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
-                        <select v-model="sortOrder" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
+                        <select v-model="sortOrder" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
                             <option value="desc">Newest First</option>
                             <option value="asc">Oldest First</option>
                         </select>
@@ -372,7 +409,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <div class="bg-slate-50 dark:bg-slate-900/50 p-2.5 px-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2 overflow-hidden">
                             <div class="w-6 h-6 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477-4.5 1.253"></path></svg>
                             </div>
                             <div class="min-w-0">
                                 <h3 class="font-black text-xs text-slate-800 dark:text-slate-100 uppercase tracking-tight truncate">{{ courseName }}</h3>
@@ -390,9 +427,11 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <input type="checkbox" :checked="selectedIds.includes(material.id)" @click.stop @change="toggleSelection(material.id)" class="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer shadow-sm">
                                 </div>
                                 <div class="flex flex-col min-w-0 w-full">
-                                    <div class="flex items-center gap-2 mb-1">
+                                    <div class="flex items-center flex-wrap gap-2 mb-1">
                                         <span class="text-sm font-bold text-slate-900 dark:text-white truncate">{{ material.title }}</span>
                                         
+                                        <span v-if="material.semester" class="text-[8px] bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">{{ material.semester }} Sem</span>
+
                                         <span v-if="activeTab === 'archived'" class="text-[8px] bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">Archived</span>
                                         <span v-else-if="material.approval_status === 'pending' && requireApproval" class="text-[8px] bg-orange-100 text-orange-700 border border-orange-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">Pending</span>
                                         <span v-else-if="material.approval_status === 'rejected'" class="text-[8px] bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">Rejected</span>
@@ -542,6 +581,19 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <input v-model="editForm.title" type="text" :class="inputClass" required>
                         <InputError class="mt-1 text-[9px]" :message="editForm.errors.title" />
                     </div>
+                    
+                    <!-- ADDED: Semester option in the edit modal -->
+                    <div>
+                        <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Semester *</label>
+                        
+                        <select v-model="editForm.semester" :class="inputClass" required>
+                            <option value="1st">1st Semester</option>
+                            <option value="2nd">2nd Semester</option>
+                        </select>
+                        
+                        <InputError class="mt-1 text-[9px]" :message="editForm.errors.semester" />
+                    </div>
+
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Show From *</label>

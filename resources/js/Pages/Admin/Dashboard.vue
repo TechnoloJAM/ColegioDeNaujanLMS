@@ -1,15 +1,17 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue'; // Removed onMounted, onUnmounted
+import { ref, computed } from 'vue';
 import { Line, Doughnut } from 'vue-chartjs';
 import { 
     Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, 
     Title, Tooltip, Legend, ArcElement, Filler 
 } from 'chart.js';
 import { 
-    Users, BookOpen, Clock, AlertTriangle, ShieldCheck, TrendingUp, ChevronLeft, ChevronRight, RefreshCw
-} from 'lucide-vue-next'; // Added RefreshCw
+    Users, BookOpen, Clock, AlertTriangle, ShieldCheck, 
+    TrendingUp, ChevronLeft, ChevronRight, RefreshCw,
+    Activity, Hourglass, Zap, ChevronRightSquare, Info
+} from 'lucide-vue-next';
 
 ChartJS.register(
     CategoryScale, LinearScale, PointElement, LineElement, 
@@ -24,10 +26,9 @@ const props = defineProps({
     currentMonth: Number,
     currentYear: Number,
     monthName: String,
-    recentCourses: Array
+    actionItems: Array 
 });
 
-// CALENDAR-STYLE ARROW NAVIGATION
 const navigateMonth = (direction) => {
     let m = props.currentMonth;
     let y = props.currentYear;
@@ -46,23 +47,20 @@ const navigateMonth = (direction) => {
     });
 };
 
-// --- NEW: MANUAL REFRESH LOGIC ---
 const isRefreshing = ref(false);
 
 const refreshData = () => {
     isRefreshing.value = true;
     router.reload({ 
-        only: ['stats', 'chartData', 'demographics', 'recentCourses'], 
+        only: ['stats', 'chartData', 'demographics', 'actionItems'], 
         preserveScroll: true, 
         preserveState: true,
         onFinish: () => {
-            // Add a tiny delay so the user can see the spin animation finish
             setTimeout(() => { isRefreshing.value = false; }, 500);
         }
     });
 };
 
-// BULLETPROOF CHART COMPUTED PROPERTY
 const lineChartData = computed(() => {
     const safeData = props.chartData || props.enrollmentTrend || {};
     
@@ -177,80 +175,151 @@ const donutOptions = {
 </script>
 
 <template>
-    <Head title="Admin Overview" />
+    <Head title="Admin Command Center" />
     <AuthenticatedLayout>
-        <div class="max-w-screen-2xl mx-auto space-y-2 sm:space-y-4 -mt-3">
+        <!-- ADDED: overflow-x-hidden on mobile to strictly prevent horizontal scrolling -->
+        <div class="max-w-screen-2xl mx-auto space-y-2 sm:space-y-4 w-full overflow-x-hidden sm:overflow-visible pb-10">
             
             <div class="flex justify-between items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-2 px-2 sm:px-0">
-                <h1 class="text-sm sm:text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
-                    <ShieldCheck class="w-4 h-4 text-blue-600" /> Admin Overview
+                <h1 class="text-sm sm:text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5 truncate">
+                    <ShieldCheck class="w-4 h-4 text-blue-600 shrink-0" /> <span class="truncate">Admin Command</span>
                 </h1>
                 
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 shrink-0">
                     <button 
                         @click="refreshData" 
                         :disabled="isRefreshing"
                         class="flex items-center gap-1.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2.5 py-1 rounded border border-slate-200 dark:border-slate-700 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-700 text-[9px] font-black uppercase tracking-widest disabled:opacity-50"
                     >
                         <RefreshCw class="w-3 h-3" :class="{'animate-spin text-blue-500': isRefreshing}" />
-                        {{ isRefreshing ? 'Updating...' : 'Refresh' }}
+                        <span class="hidden sm:inline">{{ isRefreshing ? 'Updating...' : 'Refresh Data' }}</span>
+                        <span class="sm:hidden">{{ isRefreshing ? '...' : 'Refresh' }}</span>
                     </button>
-
-                    <Link v-if="stats?.pendingMaterials > 0" :href="route('admin.materials')" class="flex items-center gap-1 bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-200 shadow-sm transition hover:bg-amber-100 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-400 shrink-0">
-                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                        <span class="text-[7px] sm:text-[9px] font-black uppercase tracking-widest">{{ stats.pendingMaterials }} Reviews</span>
-                    </Link>
                 </div>
             </div>
 
-            <div v-if="stats" class="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-3 px-2 sm:px-0">
+            <!-- ULTRA COMPACT 4-CARD METRICS GRID WITH RESPONSIVE TOOLTIPS -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-2.5 px-2 sm:px-0 w-full">
                 
-                <div class="bg-white dark:bg-slate-800 p-2 sm:p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center">
-                    <div class="min-w-0">
-                        <p class="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5 truncate">Users (Active/Total)</p>
-                        <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-none truncate">
-                            {{ stats.activeUsers || 0 }} <span class="text-[8px] text-slate-400 font-bold">/ {{ stats.totalUsers || 0 }}</span>
+                <!-- CARD 1: User Base Demographics -->
+                <div class="bg-white dark:bg-slate-800 p-2 sm:p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-1.5 justify-center min-w-0">
+                    <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700/50 pb-1 relative">
+                        <div class="flex items-center gap-1 min-w-0">
+                            <span class="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">Registered Users</span>
+                            <!-- Tooltip (Positioned Top -> Bottom, Left aligned for Card 1) -->
+                            <div class="group flex items-center z-50">
+                                <Info class="w-3 h-3 text-slate-400 cursor-help hover:text-blue-500 transition-colors" />
+                                <div class="absolute top-full -left-1 sm:left-1/2 sm:-translate-x-1/2 mt-2.5 w-[140px] sm:w-48 p-2 bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-medium rounded-lg shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity text-left sm:text-center leading-relaxed z-[100]">
+                                    Total system accounts. "Active" means fully verified. "Pending" means missing ID or verification.
+                                </div>
+                            </div>
+                        </div>
+                        <Users class="w-3 h-3 text-blue-500/50 shrink-0" />
+                    </div>
+                    <div class="flex items-end justify-between">
+                        <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-none">{{ (stats?.activeMembers || 0) + (stats?.pendingOnboarding || 0) + (stats?.suspendedUsers || 0) }}</h3>
+                        <span class="text-[7px] font-bold text-slate-400">Total Accounts</span>
+                    </div>
+                    <div class="flex gap-1 overflow-x-auto no-scrollbar mt-0.5">
+                        <span class="text-[7px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 shrink-0">{{ stats?.activeMembers || 0 }} Act</span>
+                        <span class="text-[7px] font-black px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 shrink-0">{{ stats?.pendingOnboarding || 0 }} Pnd</span>
+                        <span class="text-[7px] font-black px-1.5 py-0.5 rounded bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 shrink-0">{{ stats?.suspendedUsers || 0 }} Sus</span>
+                    </div>
+                </div>
+
+                <!-- CARD 2: System Velocity -->
+                <div class="bg-white dark:bg-slate-800 p-2 sm:p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-1.5 justify-center min-w-0">
+                    <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700/50 pb-1 relative">
+                        <div class="flex items-center gap-1 min-w-0">
+                            <span class="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">Monthly Output</span>
+                            <!-- Tooltip (Positioned Top -> Bottom, Left aligned for Card 2) -->
+                            <div class="group flex items-center z-50">
+                                <Info class="w-3 h-3 text-slate-400 cursor-help hover:text-indigo-500 transition-colors" />
+                                <div class="absolute top-full -left-1 sm:left-1/2 sm:-translate-x-1/2 mt-2.5 w-[140px] sm:w-48 p-2 bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-medium rounded-lg shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity text-left sm:text-center leading-relaxed z-[100]">
+                                    System usage. Shows total assignments submitted this month, and unique students active in the last 7 days.
+                                </div>
+                            </div>
+                        </div>
+                        <Activity class="w-3 h-3 text-indigo-500/50 shrink-0" />
+                    </div>
+                    <div class="flex items-end justify-between">
+                        <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-none">{{ stats?.submissionsProcessed || 0 }}</h3>
+                        <span class="text-[7px] font-bold text-slate-400">Submissions</span>
+                    </div>
+                    <div class="flex gap-1 overflow-x-auto no-scrollbar mt-0.5">
+                        <span class="text-[7px] font-black px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 shrink-0">{{ stats?.activeLearners || 0 }} Learners (7d)</span>
+                        <span class="text-[7px] font-black px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 shrink-0 flex items-center gap-0.5"><Zap class="w-2 h-2"/> {{ stats?.aiInterventions || 0 }} AI Plans</span>
+                    </div>
+                </div>
+
+                <!-- CARD 3: Classroom Health -->
+                <div class="bg-white dark:bg-slate-800 p-2 sm:p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col gap-1.5 justify-center min-w-0">
+                    <div class="flex justify-between items-center border-b border-slate-100 dark:border-slate-700/50 pb-1 relative">
+                        <div class="flex items-center gap-1 min-w-0">
+                            <span class="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest truncate">Classrooms</span>
+                            <!-- Tooltip (Positioned Top -> Bottom, Right aligned for Card 3 to prevent off-screen) -->
+                            <div class="group flex items-center z-50">
+                                <Info class="w-3 h-3 text-slate-400 cursor-help hover:text-emerald-500 transition-colors" />
+                                <div class="absolute top-full -right-1 sm:left-1/2 sm:-translate-x-1/2 mt-2.5 w-[140px] sm:w-48 p-2 bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-medium rounded-lg shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity text-right sm:text-center leading-relaxed z-[100]">
+                                    A "Healthy" course had materials updated within 14 days. "Stagnant" courses are abandoned.
+                                </div>
+                            </div>
+                        </div>
+                        <BookOpen class="w-3 h-3 text-emerald-500/50 shrink-0" />
+                    </div>
+                    <div class="flex items-end justify-between">
+                        <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-none">{{ (stats?.healthyCourses || 0) + (stats?.stagnantCourses || 0) }}</h3>
+                        <span class="text-[7px] font-bold text-slate-400">Published</span>
+                    </div>
+                    <div class="flex gap-1 overflow-x-auto no-scrollbar mt-0.5">
+                        <span class="text-[7px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 shrink-0">{{ stats?.healthyCourses || 0 }} Healthy</span>
+                        <span class="text-[7px] font-black px-1.5 py-0.5 rounded shrink-0 transition-colors" 
+                              :class="stats?.stagnantCourses > 0 ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 animate-pulse' : 'bg-slate-50 text-slate-500 dark:bg-slate-900/50'">
+                            {{ stats?.stagnantCourses || 0 }} Stagnant
+                        </span>
+                    </div>
+                </div>
+
+                <!-- CARD 4: Action Required (Bottlenecks) -->
+                <div class="p-2 sm:p-2.5 rounded-lg border shadow-sm flex flex-col gap-1.5 justify-center transition-colors min-w-0"
+                     :class="stats?.criticalBottlenecks > 0 ? 'border-orange-300 dark:border-orange-800/50 bg-orange-50/50 dark:bg-orange-900/10' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'">
+                    <div class="flex justify-between items-center border-b pb-1 relative" 
+                         :class="stats?.criticalBottlenecks > 0 ? 'border-orange-200 dark:border-orange-800/50' : 'border-slate-100 dark:border-slate-700/50'">
+                        <div class="flex items-center gap-1 min-w-0">
+                            <span class="text-[7px] sm:text-[8px] font-black uppercase tracking-widest truncate" 
+                                  :class="stats?.criticalBottlenecks > 0 ? 'text-orange-600 dark:text-orange-500' : 'text-slate-400'">Bottlenecks</span>
+                            <!-- Tooltip (Positioned Top -> Bottom, Right aligned for Card 4) -->
+                            <div class="group flex items-center z-50">
+                                <Info class="w-3 h-3 cursor-help transition-colors" :class="stats?.criticalBottlenecks > 0 ? 'text-orange-500 hover:text-orange-700' : 'text-slate-400 hover:text-slate-600'" />
+                                <div class="absolute top-full -right-1 sm:left-1/2 sm:-translate-x-1/2 mt-2.5 w-[140px] sm:w-48 p-2 bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-medium rounded-lg shadow-xl opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity text-right sm:text-center leading-relaxed z-[100]">
+                                    Queue aging monitor. Counts enrollments and materials pending your approval for > 48 hours.
+                                </div>
+                            </div>
+                        </div>
+                        <Hourglass class="w-3 h-3 shrink-0" :class="stats?.criticalBottlenecks > 0 ? 'text-orange-500' : 'text-slate-400'" />
+                    </div>
+                    <div class="flex items-end justify-between">
+                        <h3 class="text-sm sm:text-base font-black leading-none" 
+                            :class="stats?.criticalBottlenecks > 0 ? 'text-orange-700 dark:text-orange-400' : 'text-slate-900 dark:text-white'">
+                            {{ stats?.criticalBottlenecks || 0 }}
                         </h3>
-                        <p v-if="stats.suspendedUsers > 0" class="text-[7px] font-black text-red-500 uppercase tracking-widest mt-1">
-                            {{ stats.suspendedUsers }} Suspended
-                        </p>
+                        <span class="text-[7px] font-bold" :class="stats?.criticalBottlenecks > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400'">Pending > 48h</span>
                     </div>
-                    <Users class="w-4 h-4 text-blue-500/50 shrink-0 ml-1" />
-                </div>
-
-                <div class="bg-white dark:bg-slate-800 p-2 sm:p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center">
-                    <div class="min-w-0">
-                        <p class="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5 truncate">Active Courses</p>
-                        <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-none truncate">
-                            {{ stats.activeCourses || 0 }} <span class="text-[8px] text-slate-400 font-bold">/ {{ stats.totalCourses || 0 }}</span>
-                        </h3>
+                    <div class="flex mt-0.5">
+                        <span class="text-[7px] font-black px-1.5 py-0.5 rounded w-full text-center truncate" 
+                              :class="stats?.criticalBottlenecks > 0 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'">
+                            Needs Action
+                        </span>
                     </div>
-                    <BookOpen class="w-4 h-4 text-emerald-500/50 shrink-0 ml-1" />
                 </div>
-
-                <div class="bg-white dark:bg-slate-800 p-2 sm:p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center">
-                    <div class="min-w-0">
-                        <p class="text-[7px] sm:text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5 truncate">Enrollments</p>
-                        <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-none">{{ stats.totalEnrollments || 0 }}</h3>
-                    </div>
-                    <TrendingUp class="w-4 h-4 text-purple-500/50 shrink-0 ml-1" />
-                </div>
-
-                <div class="bg-white dark:bg-slate-800 p-2 sm:p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex justify-between items-center">
-                    <div class="min-w-0">
-                        <p class="text-[7px] sm:text-[8px] font-black text-orange-500 uppercase tracking-widest mb-0.5 truncate">Pending Enrolls</p>
-                        <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-none">{{ stats.pendingEnrollments || 0 }}</h3>
-                    </div>
-                    <AlertTriangle class="w-4 h-4 text-orange-500/50 shrink-0 ml-1" />
-                </div>
-
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4 px-2 sm:px-0">
-                <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-2 sm:p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
+            <!-- CHARTS SECTION -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4 px-2 sm:px-0 w-full min-w-0">
+                <div class="lg:col-span-2 bg-white dark:bg-slate-800 p-2 sm:p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col min-w-0">
                     <div class="flex justify-between items-center mb-1">
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-[9px] sm:text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-tight">Daily Growth</h3>
+                        <div class="flex items-center gap-2 min-w-0">
+                            <h3 class="text-[9px] sm:text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">Daily Growth</h3>
                             <div class="flex flex-wrap gap-1.5 ml-2 hidden sm:flex">
                                 <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full bg-blue-500"></span><span class="text-[7px] font-bold text-slate-500 uppercase">Accounts</span></span>
                                 <span class="flex items-center gap-0.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="text-[7px] font-bold text-slate-500 uppercase">Active</span></span>
@@ -263,7 +332,7 @@ const donutOptions = {
                             <button @click="navigateMonth('prev')" class="p-1 text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">
                                 <ChevronLeft class="w-3 h-3" />
                             </button>
-                            <span class="px-1 text-[8px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 min-w-[65px] text-center">
+                            <span class="px-1 text-[8px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 min-w-[65px] text-center truncate">
                                 {{ monthName || 'Loading...' }}
                             </span>
                             <button @click="navigateMonth('next')" class="p-1 text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors">
@@ -271,64 +340,81 @@ const donutOptions = {
                             </button>
                         </div>
                     </div>
-                    <div class="flex-1 min-h-[120px] sm:min-h-[160px] w-full relative mt-2">
+                    <div class="flex-1 min-h-[120px] sm:min-h-[160px] w-full relative mt-2 overflow-hidden">
                         <Line :data="lineChartData" :options="lineChartOptions" />
                     </div>
                 </div>
 
-                <div class="bg-white dark:bg-slate-800 p-2 sm:p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col">
-                    <h3 class="text-[9px] sm:text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-tight mb-1">User Roles</h3>
-                    <div class="flex-1 flex justify-center items-center min-h-[90px] sm:min-h-[120px]">
+                <div class="bg-white dark:bg-slate-800 p-2 sm:p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col min-w-0">
+                    <h3 class="text-[9px] sm:text-[10px] font-black text-slate-900 dark:text-white uppercase tracking-tight mb-1 truncate">User Roles</h3>
+                    <div class="flex-1 flex justify-center items-center min-h-[90px] sm:min-h-[120px] relative overflow-hidden">
                         <Doughnut :data="donutData" :options="donutOptions" />
                     </div>
                 </div>
             </div>
 
-            <div class="px-2 sm:px-0 pb-6 sm:pb-0">
-                <div class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+            <!-- ADMINISTRATIVE ACTION CENTER -->
+            <div class="px-2 sm:px-0 pb-6 sm:pb-0 w-full min-w-0">
+                <div class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden w-full">
                     <div class="p-2 border-b border-slate-100 dark:border-slate-700/50 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/20">
-                        <h3 class="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1">
-                            <Clock class="w-3 h-3 text-blue-500" /> Recent Classes
+                        <h3 class="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1 truncate">
+                            <AlertTriangle class="w-3 h-3 text-red-500 shrink-0" /> Action Center
                         </h3>
-                        <Link :href="route('admin.courses.index')" class="text-[7px] sm:text-[8px] font-black text-blue-600 dark:text-blue-400 hover:text-blue-800 uppercase tracking-widest transition-colors flex items-center gap-0.5">
-                            View All <span class="text-slate-400">&rarr;</span>
-                        </Link>
                     </div>
                     
-                    <div class="overflow-x-auto">
+                    <div class="w-full overflow-x-auto pb-1">
                         <table class="w-full text-left text-xs">
                             <thead class="bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 uppercase text-[7px] sm:text-[8px] font-black text-slate-400 tracking-widest">
                                 <tr>
-                                    <th class="px-2 py-1.5 whitespace-nowrap">Class Code / Name</th>
-                                    <th class="px-2 py-1.5 hidden sm:table-cell">Instructor</th>
-                                    <th class="px-2 py-1.5 text-right">Status</th>
+                                    <th class="px-3 py-2 whitespace-nowrap">Severity</th>
+                                    <th class="px-3 py-2 w-full">Issue Description</th>
+                                    <th class="px-3 py-2 text-right">Target</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100 dark:divide-slate-700/50">
-                                <tr v-for="course in recentCourses" :key="course?.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition">
-                                    <td class="px-2 py-1.5 max-w-[120px] sm:max-w-none">
-                                        <div class="flex items-center gap-1.5">
-                                            <span class="text-[7px] sm:text-[8px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-900 px-1 rounded shrink-0">{{ course?.enrollment_code }}</span>
-                                            <span class="text-[10px] sm:text-[11px] font-bold text-slate-900 dark:text-white truncate">{{ course?.title }}</span>
+                                <tr v-for="item in actionItems" :key="item?.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition">
+                                    <td class="px-3 py-2.5 whitespace-nowrap">
+                                        <span class="text-[7px] sm:text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm"
+                                              :class="{
+                                                  'bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/30 dark:border-red-800': item.severity === 'high',
+                                                  'bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-900/30 dark:border-orange-800': item.severity === 'medium',
+                                                  'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-700 dark:text-slate-400 dark:border-slate-600': item.severity === 'low'
+                                              }">
+                                            {{ item.severity }}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2.5">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <span class="text-[10px] sm:text-[11px] font-bold text-slate-900 dark:text-white line-clamp-2 leading-tight">{{ item.description }}</span>
                                         </div>
                                     </td>
-                                    <td class="px-2 py-1.5 hidden sm:table-cell text-[10px] sm:text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                                        {{ course?.teacher?.name || 'Unassigned' }}
-                                    </td>
-                                    <td class="px-2 py-1.5 text-right">
-                                        <span v-if="course?.is_published" class="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-emerald-600">Active</span>
-                                        <span v-else class="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400">Draft</span>
+                                    <td class="px-3 py-2.5 text-right whitespace-nowrap">
+                                        <Link :href="item.link" class="inline-flex items-center justify-center p-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded hover:bg-blue-100 dark:hover:bg-blue-800 transition shadow-sm border border-transparent">
+                                            <ChevronRightSquare class="w-3.5 h-3.5" />
+                                        </Link>
                                     </td>
                                 </tr>
-                                <tr v-if="!recentCourses || recentCourses.length === 0">
-                                    <td colspan="3" class="p-4 text-center text-slate-400 text-[8px] font-bold uppercase tracking-widest">No classes created yet.</td>
+                                <tr v-if="!actionItems || actionItems.length === 0">
+                                    <td colspan="3" class="p-6 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                                        <ShieldCheck class="w-6 h-6 text-emerald-500/50" />
+                                        <span class="text-[9px] font-black uppercase tracking-widest">No pending administrative actions.</span>
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-
         </div>
     </AuthenticatedLayout>
 </template>
+
+<style scoped>
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+</style>

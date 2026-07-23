@@ -79,10 +79,10 @@ const submitUnarchive = () => {
     });
 };
 
-const formLesson = useForm({ title: '', file: null, available_from: '', available_until: '' });
+const formLesson = useForm({ title: '', file: null, available_from: '', available_until: '', semester: '1st' });
+const formComment = useForm({ content: '' });
 const formAnnouncement = useForm({ title: '', video_link: '', content: '' });
 
-// 🪄 ADDED: hide_from_late default state
 const formAssignment = useForm({ 
     title: '', 
     type: 'assignment', 
@@ -94,7 +94,7 @@ const formAssignment = useForm({
     hide_from_late: false 
 });
 
-// The 3 Material Tabs Filter Logic
+// --- MATERIALS LOGIC ---
 const materialFilter = ref('active');
 
 const activeMaterials = computed(() => {
@@ -115,9 +115,22 @@ const archivedMaterials = computed(() => {
 });
 
 const displayedMaterials = computed(() => {
-    if (materialFilter.value === 'active') return activeMaterials.value;
-    if (materialFilter.value === 'rejected') return rejectedMaterials.value;
-    return archivedMaterials.value;
+    let activeList = [];
+    if (materialFilter.value === 'active') activeList = activeMaterials.value;
+    else if (materialFilter.value === 'rejected') activeList = rejectedMaterials.value;
+    else activeList = archivedMaterials.value;
+
+    // SORT: Newest at the top, oldest at the bottom
+    return [...activeList].sort((a, b) => {
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    });
+});
+
+const sortedAnnouncements = computed(() => {
+    if (!props.course.announcements) return [];
+    return [...props.course.announcements].sort((a, b) => {
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    });
 });
 
 const getYouTubeVideoId = (url) => {
@@ -132,7 +145,6 @@ const formatRichText = (htmlContent) => {
     
     let processed = htmlContent.replace(/<iframe/gi, '<iframe class="hidden sm:block w-full max-w-[320px] sm:max-w-[400px] aspect-video rounded-lg shadow-sm my-3 border border-slate-200 dark:border-slate-700"');
 
-    // Step B: Convert pasted YouTube links into a split Desktop/Mobile layout
     const ytRegex = /(?<!href="|src=")(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?=[^\w-]|$)/gi;
     
     processed = processed.replace(ytRegex, (match, videoId) => {
@@ -154,6 +166,7 @@ const formatRichText = (htmlContent) => {
     return processed;
 };
 
+// --- STUDENTS LOGIC ---
 const pendingStudents = computed(() => props.course.enrollments ? props.course.enrollments.filter(e => e.status === 'pending' && e.user) : []);
 const approvedStudentsRaw = computed(() => props.course.enrollments ? props.course.enrollments.filter(e => e.status === 'approved' && e.user) : []);
 
@@ -188,16 +201,23 @@ const getRankClass = (rank) => {
     return 'bg-blue-50 text-blue-600 border border-blue-100'; 
 };
 
+// --- TASKS LOGIC ---
 const filteredAssignments = computed(() => {
     const now = new Date();
     if (!props.course.assignments) return [];
-    return props.course.assignments.filter(a => {
+    
+    let filtered = props.course.assignments.filter(a => {
         const dueDate = a.due_date ? new Date(a.due_date) : null;
         const isPastDue = dueDate && dueDate < now;
         if (assignmentFilter.value === 'upcoming') return !isPastDue;
         if (assignmentFilter.value === 'past_due') return isPastDue;
         if (assignmentFilter.value === 'completed') return isPastDue; 
         return true;
+    });
+
+    // SORT: Newest at the top, oldest at the bottom
+    return filtered.sort((a, b) => {
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
     });
 });
 
@@ -219,7 +239,6 @@ const togglePublish = () => {
 const submitAnnouncement = () => formAnnouncement.post(route('teacher.announcements.store', props.course.id), { onSuccess: () => { showAnnouncementModal.value = false; formAnnouncement.reset(); }});
 const submitComment = (announcementId) => formComment.post(route('comments.store', announcementId), { onSuccess: () => { formComment.reset(); const post = props.course.announcements.find(a => a.id === announcementId); if(post) post.showComments = true; }, preserveScroll: true });
 
-// 🪄 ADDED: The Secret Tag Logic
 const submitAssignment = () => {
     formAssignment.transform((data) => ({
         ...data,
@@ -421,7 +440,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                 </div>
 
                 <div v-if="activeTab === 'announcements'" class="space-y-4 w-full">
-                    <div v-for="post in course.announcements" :key="post.id" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden hover:border-red-300 dark:hover:border-red-500 transition-colors duration-200">
+                    <div v-for="post in sortedAnnouncements" :key="post.id" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden hover:border-red-300 dark:hover:border-red-500 transition-colors duration-200">
                         
                         <div class="p-2.5 flex justify-between items-center border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
                             <div class="flex items-center gap-2">
@@ -510,7 +529,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     
                     <div class="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg gap-1 mb-2">
                         <button @click="assignmentFilter = 'upcoming'" class="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-md flex items-center justify-center gap-1 transition-all" :class="assignmentFilter === 'upcoming' ? 'bg-white dark:bg-slate-700 text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg Upcoming>
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg> Upcoming
                         </button>
                         <button @click="assignmentFilter = 'past_due'" class="flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-md flex items-center justify-center gap-1 transition-all" :class="assignmentFilter === 'past_due' ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Past Due
@@ -530,8 +549,14 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             <div class="flex-1 min-w-0">
                                 <h4 class="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">{{ assignment.title }}</h4>
                                 <div class="flex flex-wrap items-center gap-2 mt-1">
-                                    <span class="text-[8px] font-black text-slate-500 uppercase bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">{{ assignment.type.replace('_', ' ') }}</span>
-                                    <span class="text-[9px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">Due: {{ assignment.due_date ? new Date(assignment.due_date).toLocaleDateString() : 'No Date' }}</span>
+                                    <span class="text-[8px] font-black text-slate-500 uppercase bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">{{ assignment.type.replace('_', ' ') }}</span>
+                                    
+                                    <!-- THE NEW TURN-IN BADGE -->
+                                    <span class="text-[8px] font-black whitespace-nowrap bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-1.5 py-0.5 rounded shadow-sm border border-indigo-200 dark:border-indigo-800">
+                                        {{ assignment.submissions_count || 0 }} / {{ course.enrollments_count || 0 }} Submitted
+                                    </span>
+
+                                    <span class="text-[9px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">Due: {{ assignment.due_date ? new Date(assignment.due_date).toLocaleDateString() : 'No Date' }}</span>
                                     <span class="text-[9px] font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-800">{{ assignment.points }} pts</span>
                                 </div>
                             </div>
@@ -569,9 +594,12 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
                                 </div>
                                 <div class="flex flex-col min-w-0 w-full">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <span class="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white truncate">{{ lesson.title }}</span>
+                                    <div class="flex items-center flex-wrap gap-2 mb-1">
+                                        <span class="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white truncate max-w-[200px]">{{ lesson.title }}</span>
                                         
+                                        <!-- ADDED: Semester Badge -->
+                                        <span v-if="lesson.semester" class="text-[8px] bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">{{ lesson.semester }} Sem</span>
+
                                         <span v-if="materialFilter === 'archived'" class="text-[8px] bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">Archived</span>
                                         <span v-else-if="lesson.approval_status === 'pending' && requireApproval" class="text-[8px] bg-orange-100 text-orange-700 border border-orange-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">Pending Admin</span>
                                         <span v-else-if="lesson.approval_status === 'rejected'" class="text-[8px] bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">Rejected</span>
@@ -670,6 +698,16 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <InputLabel value="Material Title *" class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1" />
                         <input v-model="formLesson.title" type="text" placeholder="e.g., Chapter 1 Presentation" :class="inputClass" required>
                         <InputError class="mt-1 text-[9px]" :message="formLesson.errors.title" />
+                    </div>
+
+                    <!-- ADDED: Semester Dropdown for Material -->
+                    <div>
+                        <InputLabel value="Semester *" class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1" />
+                        <select v-model="formLesson.semester" :class="inputClass" required>
+                            <option value="1st">1st Semester</option>
+                            <option value="2nd">2nd Semester</option>
+                        </select>
+                        <InputError class="mt-1 text-[9px]" :message="formLesson.errors.semester" />
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">

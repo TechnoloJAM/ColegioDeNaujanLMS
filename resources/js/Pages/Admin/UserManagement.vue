@@ -5,8 +5,9 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import { Head, router, useForm, Link } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
+import * as XLSX from 'xlsx';
 
-// 🛡️ CRITICAL FIX: Props accepts Object to allow backend ->paginate() wrapper
+// Props accepts Object to allow backend ->paginate() wrapper
 const props = defineProps({
     users: [Array, Object]
 });
@@ -204,40 +205,69 @@ const openResetPasswordModal = (user) => {
 };
 const submitResetPassword = () => { resetPasswordForm.patch(route('admin.users.reset-password', selectedUserForPassword.value.id), { preserveScroll: true, onSuccess: () => { isResetPasswordModalOpen.value = false; selectedUserForPassword.value = null; alert('Password reset successfully. Please securely share the new password with the user.'); } }); };
 
-const exportToCSV = () => {
-    const lines = [];
-    
-    lines.push(`"COLEGIO DE NAUJAN - LMS SYSTEM REPORT"`);
-    lines.push(`"Report Generated:","${new Date().toLocaleString()}"`);
-    lines.push(`"List Category:","${activeTab.value.toUpperCase()}"`);
-    lines.push(`"Total Records:","${filteredUsers.value.length}"`);
-    lines.push(""); 
-    
-    const headers = ['School ID', 'Full Name', 'Email Address', 'Program/Department', 'System Role', 'Status', 'Date Registered'];
-    lines.push(headers.map(h => `"${h}"`).join(','));
+// MULTI-SHEET EXCEL EXPORT
+const exportToExcel = () => {
+    const wb = XLSX.utils.book_new();
 
-    filteredUsers.value.forEach(user => {
-        const row = [
-            user.school_id || 'N/A',
-            user.name.replace(/"/g, '""'), 
-            user.email,
-            user.program || 'N/A',
-            user.role.toUpperCase(),
-            user.status.toUpperCase(),
-            new Date(user.created_at).toLocaleDateString()
+    // Define the distinct pages (worksheets) to generate
+    const exportCategories = [
+        { id: 'student', name: 'Students', title: 'ACTIVE STUDENT ACCOUNTS' },
+        { id: 'teacher', name: 'Teachers', title: 'ACTIVE TEACHER ACCOUNTS' },
+        { id: 'admin', name: 'Admins', title: 'SYSTEM ADMINISTRATORS' },
+        { id: 'archive', name: 'Suspended', title: 'SUSPENDED ACCOUNTS' }
+    ];
+
+    exportCategories.forEach(category => {
+        // Filter the primary loaded data for this specific worksheet
+        const sheetUsers = usersList.value.filter(user => {
+            if (category.id === 'archive') return user.status === 'suspended';
+            return user.status === 'active' && user.role === category.id;
+        });
+
+        const wsData = [
+            ['COLEGIO DE NAUJAN - LMS SYSTEM REPORT', '', '', '', '', '', ''],
+            [], 
+            ['Report Generated:', String(new Date().toLocaleString()), '', '', '', '', ''],
+            ['Category Scope:', String(category.title), '', '', '', '', ''],
+            ['Total Records:', String(sheetUsers.length), '', '', '', '', ''],
+            [], 
+            [
+                'ID / Employee No.', 'Full Name', 'Email Address', 
+                'Program/Department', 'System Role', 'Status', 'Date Registered'
+            ]
         ];
-        lines.push(row.map(val => `"${val}"`).join(','));
+
+        if (sheetUsers.length > 0) {
+            sheetUsers.forEach(user => {
+                wsData.push([
+                    String(user.school_id || 'N/A'),
+                    String(user.name),
+                    String(user.email),
+                    String(user.program || 'N/A'),
+                    String(user.role.toUpperCase()),
+                    String(user.status.toUpperCase()),
+                    String(new Date(user.created_at).toLocaleDateString())
+                ]);
+            });
+        } else {
+            wsData.push(['No records found for this category.']);
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+        ws['!merges'] = [
+            { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } } 
+        ];
+
+        ws['!cols'] = [
+            { wch: 18 }, { wch: 30 }, { wch: 30 }, 
+            { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 20 }  
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, category.name);
     });
 
-    const csvContent = lines.join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `CDN_LMS_Users_${activeTab.value}_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    XLSX.writeFile(wb, `CDN_LMS_Master_User_List_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
 const tabs = [
@@ -277,9 +307,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Add New User</span>
                 </button>
 
-                <button @click="exportToCSV" class="group relative flex items-center justify-center w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
+                <button @click="exportToExcel" class="group relative flex items-center justify-center w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Export CSV</span>
+                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Export Excel</span>
                 </button>
             </aside>
 
@@ -446,14 +476,14 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     
                     <div v-if="!Array.isArray(users) && users.links" class="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 sm:px-6">
                         <div class="flex flex-1 justify-between sm:hidden">
-                            <Component :is="users.prev_page_url ? 'Link' : 'span'" :href="users.prev_page_url || '#'" class="relative inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50" :class="{'opacity-50 cursor-not-allowed': !users.prev_page_url}">Previous</Component>
-                            <Component :is="users.next_page_url ? 'Link' : 'span'" :href="users.next_page_url || '#'" class="relative inline-flex items-center px-4 py-2 ml-3 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50" :class="{'opacity-50 cursor-not-allowed': !users.next_page_url}">Next</Component>
+                            <Component :is="users.prev_page_url ? 'Link' : 'span'" :href="users.prev_page_url || '#'" preserve-state preserve-scroll class="relative inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50" :class="{'opacity-50 cursor-not-allowed': !users.prev_page_url}">Previous</Component>
+                            <Component :is="users.next_page_url ? 'Link' : 'span'" :href="users.next_page_url || '#'" preserve-state preserve-scroll class="relative inline-flex items-center px-4 py-2 ml-3 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50" :class="{'opacity-50 cursor-not-allowed': !users.next_page_url}">Next</Component>
                         </div>
                         <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
                             <div><p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Showing <span class="font-black">{{ users.from || 0 }}</span> to <span class="font-black">{{ users.to || 0 }}</span> of <span class="font-black">{{ users.total || 0 }}</span> users</p></div>
                             <div>
                                 <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-                                    <Link v-for="(link, k) in users.links" :key="k" :href="link.url || '#'" v-html="link.label" class="relative inline-flex items-center px-3 py-1.5 text-[10px] font-bold ring-1 ring-inset ring-slate-300 focus:z-20 focus:outline-offset-0" :class="link.active ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'"></Link>
+                                    <Link v-for="(link, k) in users.links" :key="k" :href="link.url || '#'" preserve-state preserve-scroll v-html="link.label" class="relative inline-flex items-center px-3 py-1.5 text-[10px] font-bold ring-1 ring-inset ring-slate-300 focus:z-20 focus:outline-offset-0" :class="link.active ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'"></Link>
                                 </nav>
                             </div>
                         </div>
@@ -492,7 +522,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
                     <div class="bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-700/50 p-3 space-y-2.5">
                         <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-2">
-                            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">School ID</span>
+                            <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">School ID / Emp. No.</span>
                             <span class="text-[10px] font-black text-slate-800 dark:text-slate-200 font-mono">{{ selectedUserDetails?.school_id || 'N/A' }}</span>
                         </div>
                         <div class="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-2">
@@ -544,8 +574,10 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" v-if="form.role !== 'admin'">
                         <div>
                             <div class="flex justify-between items-end mb-1">
-                                <InputLabel for="school_id" value="ID Number" class="text-[9px] font-bold uppercase text-slate-500" />
-                                <button type="button" @click="generateSchoolId" class="text-[9px] text-blue-600 dark:text-blue-400 font-bold hover:underline">Auto-Year ID</button>
+                                <InputLabel for="school_id" :value="form.role === 'teacher' ? 'Employee Number' : 'ID Number'" class="text-[9px] font-bold uppercase text-slate-500" />
+                                <button type="button" @click="generateSchoolId" class="text-[9px] text-blue-600 dark:text-blue-400 font-bold hover:underline">
+                                    Auto-Year {{ form.role === 'teacher' ? 'No.' : 'ID' }}
+                                </button>
                             </div>
                             <input id="school_id" v-model="form.school_id" type="text" :class="inputClass" :required="form.role !== 'admin'" />
                             <InputError :message="form.errors.school_id" class="mt-1 text-[10px]" />
@@ -567,7 +599,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
                         <div :class="{'col-span-2': form.role === 'teacher'}">
                             <InputLabel for="contact_number" value="Mobile Number" class="text-[9px] font-bold uppercase text-slate-500 mb-1" />
-                            <input id="contact_number" v-model="form.contact_number" type="text" :class="inputClass" />
+                            <input id="contact_number" v-model="form.contact_number" type="text" :class="inputClass" required />
                             <InputError :message="form.errors.contact_number" class="mt-1 text-[10px]" />
                         </div>
                     </div>

@@ -30,6 +30,12 @@ onMounted(() => {
 const viewMode = ref('monthly');
 const selectedDate = ref(new Date());
 
+// STATIC INITIAL PAGE: Prevents DOM rebuilds on day clicks
+const initialPage = ref({
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear()
+});
+
 // --- DYNAMIC FILTERS (SEGREGATED BY ROLE) ---
 const availableFilters = computed(() => {
     if (user.role === 'admin') return [{ id: 'Institution', name: 'Global Events', color: 'purple' }];
@@ -67,17 +73,43 @@ const getFilterClass = (f) => {
 
 // V-Calendar Attributes mapping
 const filteredAttributes = computed(() => {
-    return props.attributes
+    // Keep existing event dot logic
+    const attrs = props.attributes
         .filter(a => activeFilters.value.includes(a.customData.type))
         .map(a => ({
             ...a,
             dot: { color: a.customData.color, class: 'scale-150 shadow-sm' }
         }));
+
+    // 1. Solid highlight for the currently selected date
+    attrs.push({
+        key: 'selected-date',
+        highlight: {
+            color: 'blue',
+            fillMode: 'solid'
+        },
+        dates: selectedDate.value,
+        order: -10 
+    });
+
+    // 2. Subtle outline for the actual present day
+    attrs.push({
+        key: 'actual-today',
+        highlight: {
+            color: 'blue',
+            fillMode: 'outline'
+        },
+        dates: new Date(),
+        order: -20
+    });
+
+    return attrs;
 });
 
 // Agenda items for the selected day
 const dayEvents = computed(() => {
     return filteredAttributes.value.filter(a => 
+        a.customData && // Protects against the system reading highlights as events
         new Date(a.dates).toDateString() === selectedDate.value.toDateString()
     );
 });
@@ -100,7 +132,7 @@ const getLink = (data) => {
     return null;
 };
 
-// --- NO EMOJIS: LUCIDE ICON RESOLVER ---
+// --- ICON RESOLVER ---
 const getIcon = (data) => {
     if (data.type === 'Institution') {
         if (data.category === 'Holiday') return AlertTriangle;
@@ -176,9 +208,17 @@ const deleteEvent = (id) => {
             <div class="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 overflow-hidden pb-4">
                 
                 <div class="w-full lg:w-7/12 xl:w-2/3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-4 shadow-sm shrink-0 lg:shrink flex flex-col min-h-[350px]">
-                    <Calendar expanded borderless transparent :view="viewMode" :attributes="filteredAttributes" 
-                        @dayclick="d => selectedDate = d.date" :is-dark="isDarkMode" 
-                        class="w-full h-full custom-calendar" />
+                    <Calendar 
+                        expanded 
+                        borderless 
+                        transparent 
+                        :view="viewMode" 
+                        :attributes="filteredAttributes" 
+                        :initial-page="initialPage"
+                        @dayclick="d => selectedDate = d.date" 
+                        :is-dark="isDarkMode" 
+                        class="w-full h-full custom-calendar" 
+                    />
                 </div>
 
                 <div class="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700/50 rounded-2xl flex flex-col overflow-hidden h-[400px] lg:h-auto shrink-0 shadow-inner">
