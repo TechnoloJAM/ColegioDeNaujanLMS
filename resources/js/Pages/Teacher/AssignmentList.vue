@@ -247,7 +247,7 @@ const filteredAssignments = computed(() => {
                                             </div>
                                             
                                             <div class="flex gap-1.5 shrink-0">
-                                                <!-- NEW: RESTRICTED LABEL -->
+                                                <!-- RESTRICTED LABEL -->
                                                 <span v-if="isRestricted(assignment.description)" class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400 px-1.5 py-0.5 rounded shadow-sm border border-orange-200 dark:border-orange-800">
                                                     Hidden to Late Enrollees
                                                 </span>
@@ -256,6 +256,11 @@ const filteredAssignments = computed(() => {
                                                 <span v-if="assignment.ungraded_count > 0" class="flex items-center gap-1 text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400 px-1.5 py-0.5 rounded shadow-sm border border-amber-200 dark:border-amber-800">
                                                     <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
                                                     {{ assignment.ungraded_count }} To Grade
+                                                </span>
+
+                                                <!-- TURN-IN RATE BADGE -->
+                                                <span class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-1.5 py-0.5 rounded shadow-sm border border-indigo-200 dark:border-indigo-800">
+                                                    {{ assignment.submissions_count || 0 }} / {{ selectedCourse.enrollments_count || 0 }} Submitted
                                                 </span>
 
                                                 <!-- Points Badge -->

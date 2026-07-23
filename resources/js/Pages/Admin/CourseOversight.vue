@@ -5,6 +5,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import { Head, router, useForm, Link, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
+import * as XLSX from 'xlsx';
 
 const props = defineProps({
     courses: Array,
@@ -198,23 +199,57 @@ const submitBulkDelete = () => {
     });
 };
 
-const exportToCSV = () => {
-    const headers = ['Course Title', 'Code', 'Teacher', 'Year Level', 'Admin Visibility', 'Students Enrolled', 'Lessons', 'Assignments'];
-    const rows = filteredCourses.value.map(course => [
-        `"${course.title}"`, `"${course.enrollment_code}"`, `"${course.teacher ? course.teacher.name : 'Unassigned'}"`,
-        `"${formatYearLevel(course.difficulty_level)}"`, `"${hiddenCourses.value.includes(course.id) ? 'HIDDEN (Local)' : 'ACTIVE'}"`,
-        `"${course.enrollments ? course.enrollments.length : 0}"`, `"${course.lessons_count}"`, `"${course.assignments_count}"`
-    ]);
+const exportToExcel = () => {
+    const wb = XLSX.utils.book_new();
 
-    const csvContent = [headers.join(','), ...rows.map(e => e.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `LMS_Courses_${activeTab.value}_${new Date().toISOString().slice(0,10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const wsData = [
+        // Merged Header Title
+        ['COLEGIO DE NAUJAN - COURSE OVERSIGHT REPORT', '', '', '', '', '', '', ''],
+        [],
+        ['Report Generated:', String(new Date().toLocaleString()), '', '', '', '', '', ''],
+        ['List Category:', String(activeTab.value.toUpperCase()), '', '', '', '', '', ''],
+        ['Total Records:', String(filteredCourses.value.length), '', '', '', '', '', ''],
+        [],
+        // Table Headers
+        [
+            'Course Title', 'Code', 'Teacher', 'Year Level', 
+            'Admin Visibility', 'Students Enrolled', 'Lessons', 'Assignments'
+        ]
+    ];
+
+    if (filteredCourses.value.length > 0) {
+        filteredCourses.value.forEach(course => {
+            // Wrapping numbers in String() forces left-alignment in Excel
+            wsData.push([
+                String(course.title),
+                String(course.enrollment_code),
+                String(course.teacher ? course.teacher.name : 'Unassigned'),
+                String(formatYearLevel(course.difficulty_level)),
+                String(hiddenCourses.value.includes(course.id) ? 'HIDDEN (Local)' : 'ACTIVE'),
+                String(course.enrollments ? course.enrollments.length : 0),
+                String(course.lessons_count),
+                String(course.assignments_count)
+            ]);
+        });
+    } else {
+        wsData.push(['No courses found.']);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Merge the top title across all 8 columns
+    ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } } 
+    ];
+
+    // Set professional column widths
+    ws['!cols'] = [
+        { wch: 35 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, 
+        { wch: 20 }, { wch: 18 }, { wch: 15 }, { wch: 15 }  
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Courses");
+    XLSX.writeFile(wb, `LMS_Courses_${activeTab.value}_${new Date().toISOString().slice(0,10)}.xlsx`);
 };
 
 const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent py-1.5 px-3 text-xs shadow-sm transition-colors duration-200";
@@ -241,9 +276,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Create New Course</span>
                 </button>
 
-                <button @click="exportToCSV" class="group relative flex items-center justify-center w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
+                <button @click="exportToExcel" class="group relative flex items-center justify-center w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Export CSV</span>
+                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Export Excel</span>
                 </button>
             </aside>
 

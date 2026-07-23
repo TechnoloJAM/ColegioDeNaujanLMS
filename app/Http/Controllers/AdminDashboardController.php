@@ -9,6 +9,8 @@ use App\Models\User;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Lesson;
+use App\Models\Submission;
+use App\Models\Recommendation; 
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\Setting;
@@ -18,32 +20,150 @@ class AdminDashboardController extends Controller
 {
     public function index(Request $request)
     {
+        $fortyEightHoursAgo = now()->subHours(48);
+        $fourteenDaysAgo = now()->subDays(14);
+        $startOfMonth = now()->startOfMonth();
+
+        // 1. ACTIVE LEARNERS: Unique students who submitted work in the last 7 days
+        $activeLearners = Submission::where('created_at', '>=', now()->subDays(7))
+            ->distinct('user_id')
+            ->count('user_id');
+
+        // 2. REGISTERED USERS (Corrected Math for accurate top cards)
+        $activeMembers = User::where('status', 'active')
+            ->whereNotNull('email_verified_at')
+            ->where(function($q) {
+                // Admins don't need a school ID, everyone else does to be 'active'
+                $q->whereNotNull('school_id')->orWhere('role', 'admin');
+            })->count();
+
+        $pendingOnboarding = User::where('status', 'active')
+            ->where(function($q) {
+                $q->whereNull('email_verified_at')
+                  ->orWhere(function($sub) {
+                      $sub->whereNull('school_id')->where('role', '!=', 'admin');
+                  });
+            })->count();
+            
+        $suspendedUsers = User::where('status', 'suspended')->count();
+
+        // 3. ACADEMIC VELOCITY: System-wide throughput for the current month
+        $submissionsProcessed = Submission::where('created_at', '>=', $startOfMonth)->count();
+        $aiInterventions = Recommendation::where('created_at', '>=', $startOfMonth)->count();
+
+        // 4. CLASSROOM HEALTH: Measuring stagnant vs active environments
+        $totalPublishedCourses = Course::where('is_published', true)->count();
+        
+        $healthyCourses = Course::where('is_published', true)
+            ->where(function($q) use ($fourteenDaysAgo) {
+                $q->whereHas('lessons', function($sq) use ($fourteenDaysAgo) {
+                    $sq->where('created_at', '>=', $fourteenDaysAgo);
+                })
+                ->orWhereHas('assignments', function($sq) use ($fourteenDaysAgo) {
+                    $sq->where('created_at', '>=', $fourteenDaysAgo);
+                })
+                ->orWhereHas('assignments.submissions', function($sq) use ($fourteenDaysAgo) {
+                    $sq->where('created_at', '>=', $fourteenDaysAgo);
+                });
+            })->count();
+
+        $stagnantCourses = $totalPublishedCourses - $healthyCourses;
+
+        // 5. CRITICAL BOTTLENECKS: Queue Aging > 48 hours
+        $staleEnrollmentsCount = Enrollment::where('status', 'pending')
+            ->where('created_at', '<', $fortyEightHoursAgo)
+            ->count();
+            
+        $staleMaterialsCount = Lesson::where('approval_status', 'pending')
+            ->where('created_at', '<', $fortyEightHoursAgo)
+            ->count();
+            
+        $criticalBottlenecks = $staleEnrollmentsCount + $staleMaterialsCount;
+
+        // ==========================================
+        // ADMINISTRATIVE ACTION CENTER PIPELINE
+        // ==========================================
+        $actionItems = collect();
+
+        // A. High Severity: Stale Materials
+        $staleLessons = Lesson::with('course')
+            ->where('approval_status', 'pending')
+            ->where('created_at', '<', $fortyEightHoursAgo)
+            ->take(3)
+            ->get();
+            
+        foreach($staleLessons as $lesson) {
+            $courseTitle = $lesson->course ? $lesson->course->title : 'Deleted Course';
+            $actionItems->push([
+                'id' => 'mat_'.$lesson->id,
+                'severity' => 'high',
+                'description' => "Material in '{$courseTitle}' pending review > 48 hours.",
+                'link' => route('admin.materials')
+            ]);
+        }
+
+        // B. High Severity: Stale Enrollments
+        $staleEnrolls = Enrollment::with('course')
+            ->selectRaw('course_id, count(*) as total')
+            ->where('status', 'pending')
+            ->where('created_at', '<', $fortyEightHoursAgo)
+            ->groupBy('course_id')
+            ->take(3)
+            ->get();
+            
+        foreach($staleEnrolls as $enroll) {
+            $courseTitle = $enroll->course ? $enroll->course->title : 'Deleted Course';
+            $actionItems->push([
+                'id' => 'enr_'.$enroll->course_id,
+                'severity' => 'high',
+                'description' => "{$enroll->total} students pending enrollment in '{$courseTitle}' for > 48h.",
+                'link' => route('admin.courses.index') 
+            ]);
+        }
+
+        // C. Medium Severity: Stagnant Courses
+        $stagnantList = Course::where('is_published', true)
+            ->whereDoesntHave('lessons', fn($q) => $q->where('created_at', '>=', $fourteenDaysAgo))
+            ->whereDoesntHave('assignments', fn($q) => $q->where('created_at', '>=', $fourteenDaysAgo))
+            ->whereDoesntHave('assignments.submissions', fn($q) => $q->where('created_at', '>=', $fourteenDaysAgo))
+            ->take(4)
+            ->get();
+            
+        foreach($stagnantList as $course) {
+            $actionItems->push([
+                'id' => 'stag_'.$course->id,
+                'severity' => 'medium',
+                'description' => "Classroom '{$course->title}' completely inactive > 14 days.",
+                'link' => route('admin.courses.index')
+            ]);
+        }
+
+        // Bundle Health & Velocity Stats (Variables correctly passed)
         $stats = [
-            'totalUsers' => User::count(),
-            'activeUsers' => User::where('status', 'active')->count(),
-            'suspendedUsers' => User::where('status', 'suspended')->count(),
-            'students' => User::where('role', 'student')->count(),
-            'teachers' => User::where('role', 'teacher')->count(),
-            'totalCourses' => Course::count(),
-            'activeCourses' => Course::where('is_published', true)->count(),
-            'totalEnrollments' => Enrollment::count(),
-            'pendingMaterials' => Lesson::where('approval_status', 'pending')->count(),
-            'pendingEnrollments' => Enrollment::where('status', 'pending')->count(),
+            'activeMembers' => $activeMembers,
+            'pendingOnboarding' => $pendingOnboarding,
+            'suspendedUsers' => $suspendedUsers,
+            'activeLearners' => $activeLearners,
+            'submissionsProcessed' => $submissionsProcessed,
+            'aiInterventions' => $aiInterventions,
+            'healthyCourses' => $healthyCourses,
+            'stagnantCourses' => $stagnantCourses,
+            'criticalBottlenecks' => $criticalBottlenecks,
         ];
 
-        // DYNAMIC MONTH-BY-MONTH CALENDAR CHART
+        // ==========================================
+        // DYNAMIC MONTH-BY-MONTH CALENDAR CHART 
+        // ==========================================
         $month = $request->query('month', now()->month);
         $year = $request->query('year', now()->year);
         $date = Carbon::createFromDate($year, $month, 1);
         $daysInMonth = $date->daysInMonth;
 
-        // Grouping for Users created IN this specific month (DAILY METRICS)
         $usersDaily = User::whereYear('created_at', $year)
             ->whereMonth('created_at', $month)
             ->get()
             ->groupBy(fn($val) => Carbon::parse($val->created_at)->format('j'));
 
-        // Grouping for New Daily Enrollments
         $enrollsDaily = Enrollment::whereYear('created_at', $year)
             ->whereMonth('created_at', $month)
             ->get()
@@ -58,16 +178,17 @@ class AdminDashboardController extends Controller
 
         for ($i = 1; $i <= $daysInMonth; $i++) {
             $labels[] = $date->format('M') . ' ' . $i;
-            
-            // Extract the specific day's users
             $dailyUsers = $usersDaily->get($i, collect());
             
-            // Push DAILY new accounts to graph (Creates dynamic spikes)
             $totalData[] = $dailyUsers->count();
-            $activeData[] = $dailyUsers->where('status', 'active')->count();
-            $suspendedData[] = $dailyUsers->where('status', 'suspended')->count();
             
-            // Push daily enrollments
+            // Chart Math Corrected: Matches the top cards strict filtering
+            $activeData[] = $dailyUsers->where('status', 'active')
+                                       ->whereNotNull('email_verified_at')
+                                       ->filter(fn($u) => $u->role === 'admin' || $u->school_id !== null)
+                                       ->count();
+                                       
+            $suspendedData[] = $dailyUsers->where('status', 'suspended')->count();
             $enrollmentsData[] = $enrollsDaily->get($i, 0);
         }
 
@@ -75,7 +196,11 @@ class AdminDashboardController extends Controller
             'stats' => $stats,
             'demographics' => [
                 'labels' => ['Students', 'Teachers', 'Admins'],
-                'data' => [$stats['students'], $stats['teachers'], User::where('role', 'admin')->count()]
+                'data' => [
+                    User::where('role', 'student')->count(),
+                    User::where('role', 'teacher')->count(),
+                    User::where('role', 'admin')->count()
+                ]
             ],
             'chartData' => [
                 'labels' => $labels,
@@ -87,14 +212,13 @@ class AdminDashboardController extends Controller
             'currentMonth' => (int) $month,
             'currentYear' => (int) $year,
             'monthName' => $date->format('F Y'),
-            'recentCourses' => Course::with('teacher')->latest()->take(5)->get()
+            'actionItems' => $actionItems->values()->toArray()
         ]);
     }
 
     public function users()
     {
         return Inertia::render('Admin/UserManagement', [
-            // 🛡️ CRITICAL FIX: Changed ->get() to ->paginate(15) to prevent browser crashing
             'users' => User::with('enrolledCourses:id,title')
                 ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at', 'contact_number', 'avatar')
                 ->orderBy('name')
@@ -182,6 +306,7 @@ class AdminDashboardController extends Controller
         }
 
         User::whereIn('id', $request->user_ids)->delete();
+
         return back()->with('success', count($request->user_ids) . ' user(s) permanently deleted.');
     }
 
@@ -201,6 +326,7 @@ class AdminDashboardController extends Controller
         }
 
         $user->update(['role' => $request->role]);
+
         return back()->with('success', "{$user->name} is now a " . ucfirst($request->role) . ".");
     }
 
@@ -320,6 +446,7 @@ class AdminDashboardController extends Controller
         }
 
         $course->update($data);
+
         return back()->with('success', 'Course updated successfully.');
     }
 
@@ -399,6 +526,7 @@ class AdminDashboardController extends Controller
                          $type = $sub->assignment ? $sub->assignment->type : null;
                          
                          $studentTotal += $grade;
+
                          if ($type === 'assignment') $assignmentScore += $grade;
                          elseif ($type === 'activity') $activityScore += $grade;
                          elseif ($type === 'performance_task') $ptScore += $grade;

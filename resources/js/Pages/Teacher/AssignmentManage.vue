@@ -14,8 +14,12 @@ const props = defineProps({
     course: Object,
     toBeGraded: Array,
     graded: Array,
+    enrollmentCount: Number, // ADDED: Receives the class size from the controller
     backUrl: String
 });
+
+// ADDED: Combines both graded and ungraded to get the total turn-in count
+const totalSubmissions = computed(() => props.toBeGraded.length + props.graded.length);
 
 // 🪄 PARSE THE SECRET TAG
 const rawDescription = props.assignment.description || '';
@@ -151,11 +155,17 @@ const submitGrade = () => {
                     <ChevronLeft class="w-3 h-3 text-slate-300 shrink-0" />
                     <span class="text-[9px] font-black uppercase text-blue-500 tracking-widest shrink-0">Task</span>
                 </nav>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                     <span class="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-slate-500 bg-slate-50 dark:bg-slate-900 shrink-0">
                         {{ assignment.type.replace('_', ' ') }}
                     </span>
-                    <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight leading-tight truncate">{{ assignment.title }}</h1>
+                    
+                    <!-- ADDED: TURN-IN RATE BADGE -->
+                    <span class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-1.5 py-0.5 rounded shadow-sm border border-indigo-200 dark:border-indigo-800 shrink-0">
+                        {{ totalSubmissions }} / {{ enrollmentCount || 0 }} Submitted
+                    </span>
+
+                    <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight leading-tight truncate w-full sm:w-auto">{{ assignment.title }}</h1>
                 </div>
             </div>
             

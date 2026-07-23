@@ -59,18 +59,21 @@ class CourseController extends Controller
     public function show(Course $course)
     {
         $user = Auth::user();
-
         if ($user->role === 'student') abort(403, 'Students must access courses through the student dashboard.');
         if ($user->role === 'teacher' && $course->teacher_id !== $user->id) abort(403, 'Unauthorized access.');
-
+        
         $course->load([
-            'assignments', 
+            'assignments' => function($q) {
+                $q->withCount('submissions'); 
+            }, 
             'lessons', 
             'announcements.user',
             'announcements.comments.user',
             'enrollments.user' 
-        ]); 
-
+        ])->loadCount(['enrollments' => function($q) {
+            $q->where('status', 'approved');
+        }]);
+        
         return Inertia::render('Teacher/CourseManage', ['course' => $course]);
     }
 
@@ -151,7 +154,6 @@ class CourseController extends Controller
 
         $assignments = $course->assignments()->orderBy('created_at')->get();
 
-        // THE ORIGINAL QUERY: Using whereHas to strictly fetch from the Users table based on enrolledCourses
         $students = User::whereHas('enrolledCourses', function($query) use ($course) {
             $query->where('course_id', $course->id)->where('enrollments.status', 'approved');
         })->with(['submissions' => function($query) use ($course) {
