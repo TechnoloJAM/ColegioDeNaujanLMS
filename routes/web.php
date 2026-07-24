@@ -84,6 +84,9 @@ Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->name
     Route::get('/courses/{course}', [StudentController::class, 'show'])->name('courses.show');
     Route::delete('/courses/{course}/leave', [StudentController::class, 'leave'])->name('courses.leave');
     Route::get('/my-assignments', [StudentController::class, 'assignments'])->name('assignments');
+    
+    // NEW: Read-Only Student Grades Route
+    Route::get('/my-grades', [StudentController::class, 'grades'])->name('grades');
 });
 
 // SHARED SUBMISSION ROUTES

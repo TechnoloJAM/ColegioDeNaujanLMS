@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import InputError from '@/Components/InputError.vue'; // 🛡️ CRITICAL: Fixed the Vue warning crash!
+import InputError from '@/Components/InputError.vue';
 import { Head, useForm, Link, usePage, router } from '@inertiajs/vue3';
 import { ref, onMounted, nextTick, computed, watch } from 'vue'; 
 import Modal from '@/Components/Modal.vue';
@@ -14,7 +14,7 @@ const currentUser = usePage().props.auth.user;
 
 const activeTab = ref('announcements');
 const assignmentFilter = ref('upcoming'); 
-const sortOrder = ref('desc'); 
+const sortOrder = ref('asc'); // Default: Closest deadline to farthest deadline
 const highlightedId = ref(null);
 
 const showSubmitModal = ref(false);
@@ -69,6 +69,14 @@ const formatRichText = (htmlContent) => {
     return processed;
 };
 
+// Computed property for Latest to Oldest Announcements
+const sortedAnnouncements = computed(() => {
+    if (!props.course.announcements) return [];
+    return [...props.course.announcements].sort((a, b) => {
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    });
+});
+
 // Computed properties for Notification Dots
 const pendingTasksCount = computed(() => {
     const now = new Date();
@@ -92,6 +100,7 @@ const pastDueTasksCount = computed(() => {
 
 const totalActionNeeded = computed(() => pendingTasksCount.value + pastDueTasksCount.value);
 
+// Computed property for Tasks sorted by Closest to Farthest Deadline
 const filteredAssignments = computed(() => {
     const now = new Date();
     if (!props.course.assignments) return [];
@@ -106,9 +115,9 @@ const filteredAssignments = computed(() => {
     });
 
     filtered.sort((a, b) => {
-        const dateA = new Date(a.created_at || 0).getTime();
-        const dateB = new Date(b.created_at || 0).getTime();
-        return sortOrder.value === 'desc' ? dateB - dateA : dateA - dateB;
+        const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+        const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+        return sortOrder.value === 'asc' ? dateA - dateB : dateB - dateA;
     });
 
     return filtered;
@@ -187,12 +196,11 @@ const openSubmitModal = (a) => {
 const submitWork = () => {
     if (isOverSizeLimit.value) return;
     
-    // Using Inertia's native useForm submission just like the Teacher side
     formSubmission.post(route('assignments.submit', selectedAssignment.value.id), { 
-        forceFormData: true, // Guarantees files are packaged correctly
+        forceFormData: true,
         preserveScroll: true,
         onSuccess: () => { 
-            showDetailsModal.value = false; 
+            showSubmitModal.value = false; 
             formSubmission.reset(); 
             formSubmission.files = []; 
         }
@@ -243,10 +251,11 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
 
         <div class="max-w-4xl mx-auto min-h-[400px] px-2 sm:px-0">
             
+            <!-- ANNOUNCEMENTS TAB -->
             <div v-if="activeTab === 'announcements'" class="space-y-4 animate-in fade-in duration-300">
-                <div v-if="course.announcements.length === 0" class="text-center py-12 text-slate-400 text-sm italic">No updates posted yet.</div>
+                <div v-if="sortedAnnouncements.length === 0" class="text-center py-12 text-slate-400 text-sm italic">No updates posted yet.</div>
                 
-                <div v-for="post in course.announcements" :key="post.id" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden transition-all hover:border-blue-300">
+                <div v-for="post in sortedAnnouncements" :key="post.id" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden transition-all hover:border-blue-300">
                     <div class="p-4 flex gap-3 items-center border-b border-slate-50 dark:border-slate-700 bg-slate-50/30 dark:bg-slate-900/20">
                         <div class="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-black text-sm shrink-0">{{ post.user.name.charAt(0) }}</div>
                         <div>
@@ -307,6 +316,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                 </div>
             </div>
 
+            <!-- TASKS TAB -->
             <div v-if="activeTab === 'assignments'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                 
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -332,8 +342,8 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                     <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                         <Filter class="w-4 h-4 text-slate-400 hidden sm:block" />
                         <select v-model="sortOrder" class="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm focus:ring-0 cursor-pointer py-1.5 pl-2 pr-6 transition">
-                            <option value="desc">Latest to Oldest</option>
-                            <option value="asc">Oldest to Latest</option>
+                            <option value="asc">Closest Deadline</option>
+                            <option value="desc">Farthest Deadline</option>
                         </select>
                     </div>
                 </div>
@@ -402,6 +412,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                 </div>
             </div>
 
+            <!-- MATERIALS TAB -->
             <div v-if="activeTab === 'materials'" class="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-3xl">
                 
                 <div v-if="activeMaterials.length > 0" class="space-y-3">
@@ -434,6 +445,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
             </div>
         </div>
 
+        <!-- MATERIAL PREVIEW MODAL -->
         <Modal :show="showMaterialPreview" @close="showMaterialPreview = false" maxWidth="4xl">
             <div class="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[85vh]">
                 <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
@@ -464,6 +476,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
             </div>
         </Modal>
 
+        <!-- SUBMIT WORK MODAL -->
         <Modal :show="showSubmitModal" @close="showSubmitModal = false" maxWidth="2xl">
             <div class="bg-white dark:bg-slate-800 rounded-2xl overflow-hidden flex flex-col h-[85vh]">
                 <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">

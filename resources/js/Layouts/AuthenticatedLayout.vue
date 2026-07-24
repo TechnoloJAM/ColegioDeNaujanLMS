@@ -138,9 +138,10 @@ const menus = computed(() => {
         ];
     } else if (user.role === 'student') {
         return [
-            { name: 'Home', route: 'dashboard', icon: icons.dashboard },
+            { name: 'Home', route: 'student.dashboard', icon: icons.dashboard },
             { name: 'Classes', route: 'student.courses', icon: icons.courses }, 
             { name: 'Tasks', route: 'student.assignments', icon: icons.assignments, badge: pendingTasksCount.value },
+            { name: 'Grades', route: 'student.grades', icon: icons.gradebook },
             { name: 'Calendar', route: 'calendar.index', icon: icons.calendar },
         ];
     } else if (user.role === 'admin') {
