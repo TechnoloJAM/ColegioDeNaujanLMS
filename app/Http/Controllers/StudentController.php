@@ -14,7 +14,7 @@ use Carbon\Carbon;
 
 class StudentController extends Controller
 {
-    // 🪄 NEW HELPER FUNCTION: Teaches the backend to read the secret tag!
+    // HELPER FUNCTION: Teaches the backend to read the secret tag!
     private function isHiddenFromStudent($assignment, $enrollmentDate)
     {
         if (!$assignment->due_date) return false;
@@ -66,7 +66,7 @@ class StudentController extends Controller
             $total = 0; $earned = 0;
             
             foreach ($assignments as $a) {
-                // 🛡️ Skip hidden tasks so it doesn't ruin their grade average!
+                // Skip hidden tasks so it doesn't ruin their grade average!
                 $enrollmentDate = $enrollments[$courseId]->created_at ?? $enrollments[$courseId]->enrolled_at;
                 if ($this->isHiddenFromStudent($a, $enrollmentDate)) {
                     continue; 
@@ -97,9 +97,9 @@ class StudentController extends Controller
                 $q->where('closing_date', '>=', now())
                   ->orWhereNull('closing_date');
             })
-            ->whereDoesntHave('submissions', function($q) use ($user) { 
-                $q->where('user_id', $user->id); 
-            })
+            ->whereDoesntHave('submissions', function($q) use ($user) {
+                 $q->where('user_id', $user->id); 
+             })
             ->with('course:id,title')
             ->orderBy('due_date', 'asc')
             ->get()
@@ -183,24 +183,23 @@ class StudentController extends Controller
         if (!$enrollment || $enrollment->status !== 'approved') abort(403, 'You are not approved for this class.');
 
         $now = now();
-
         $course->load([
             'teacher',
             'lessons' => function($q) use ($now) { 
-                $q->where('approval_status', 'approved')
-                  ->where(function ($query) use ($now) {
-                      $query->whereNull('available_from')->orWhere('available_from', '<=', $now);
-                  })
-                  ->where(function ($query) use ($now) {
-                      $query->whereNull('available_until')->orWhere('available_until', '>=', $now);
-                  });
+                 $q->where('approval_status', 'approved')
+                   ->where(function ($query) use ($now) {
+                       $query->whereNull('available_from')->orWhere('available_from', '<=', $now);
+                   })
+                   ->where(function ($query) use ($now) {
+                       $query->whereNull('available_until')->orWhere('available_until', '>=', $now);
+                   });
             },
             'assignments.submissions' => function($q) { $q->where('user_id', Auth::id()); },
             'announcements.user',
             'announcements.comments.user'
         ]);
 
-        // 🛡️ Strip out hidden assignments before sending to the Vue file
+        // Strip out hidden assignments before sending to the Vue file
         $enrollmentDate = $enrollment->created_at ?? $enrollment->enrolled_at;
         $filteredAssignments = $course->assignments->reject(function($a) use ($enrollmentDate) {
             return $this->isHiddenFromStudent($a, $enrollmentDate);
@@ -231,7 +230,7 @@ class StudentController extends Controller
             }])
             ->get();
 
-        // 🛡️ Filter hidden assignments from the main Tasks list
+        // Filter hidden assignments from the main Tasks list
         foreach ($courses as $course) {
             $enrollmentDate = $course->pivot->created_at ?? $course->pivot->enrolled_at;
             $filteredAssignments = $course->assignments->reject(function($a) use ($enrollmentDate) {
@@ -270,8 +269,8 @@ class StudentController extends Controller
         }
 
         $existingSubmission = Submission::where('assignment_id', $assignment->id)->where('user_id', Auth::id())->first();
-
         $filePaths = [];
+
         if ($hasFiles) {
             foreach ($request->file('files') as $file) {
                 $filePaths[] = $file->store('submissions', 'public');
@@ -305,10 +304,103 @@ class StudentController extends Controller
         }
 
         $submission = Submission::where('assignment_id', $assignment->id)->where('user_id', Auth::id())->first();
+
         if ($submission) {
             if ($submission->grade !== null) return back()->with('error', 'Security Block: Cannot unsubmit a graded assignment.');
             $submission->delete(); 
         }
+
         return back()->with('success', 'Submission removed.');
+    }
+
+    public function grades()
+    {
+        $user = Auth::user();
+
+        $courses = Course::whereHas('enrollments', function($q) use ($user) {
+                $q->where('user_id', $user->id)->where('status', 'approved');
+            })
+            ->where('is_published', true)
+            ->with(['assignments', 'teacher:id,name'])
+            ->get();
+
+        $submissions = Submission::where('user_id', $user->id)
+            ->whereHas('assignment', function($q) use ($courses) {
+                $q->whereIn('course_id', $courses->pluck('id'));
+            })
+            ->get()
+            ->keyBy('assignment_id');
+
+        $formattedCourses = $courses->map(function($course) use ($submissions, $user) {
+            $maxAssign = 0; $maxAct = 0; $maxPt = 0; $totalMax = 0;
+            $earnedAssign = 0; $earnedAct = 0; $earnedPt = 0; $totalEarned = 0;
+
+            $enrollment = Enrollment::where('user_id', $user->id)->where('course_id', $course->id)->first();
+            $enrollmentDate = $enrollment ? ($enrollment->created_at ?? $enrollment->enrolled_at) : null;
+
+            $validAssignments = collect();
+
+            foreach($course->assignments as $assignment) {
+                if ($this->isHiddenFromStudent($assignment, $enrollmentDate)) {
+                    continue;
+                }
+
+                $validAssignments->push($assignment);
+                
+                $pts = (float) $assignment->points;
+                $totalMax += $pts;
+                
+                if ($assignment->type === 'assignment') $maxAssign += $pts;
+                elseif ($assignment->type === 'activity') $maxAct += $pts;
+                elseif ($assignment->type === 'performance_task') $maxPt += $pts;
+
+                $sub = $submissions->get($assignment->id);
+                if ($sub && $sub->grade !== null) {
+                    $grade = (float) $sub->grade;
+                    $totalEarned += $grade;
+                    
+                    if ($assignment->type === 'assignment') $earnedAssign += $grade;
+                    elseif ($assignment->type === 'activity') $earnedAct += $grade;
+                    elseif ($assignment->type === 'performance_task') $earnedPt += $grade;
+                }
+            }
+
+            return [
+                'id' => $course->id,
+                'title' => $course->title,
+                'teacher' => $course->teacher->name,
+                'assignments' => $validAssignments->map(function($a) use ($submissions) {
+                    $sub = $submissions->get($a->id);
+                    return [
+                        'id' => $a->id,
+                        'title' => $a->title,
+                        'type' => str_replace('_', ' ', $a->type),
+                        'points' => $a->points,
+                        'due_date' => $a->due_date,
+                        'is_submitted' => $sub ? true : false,
+                        'grade' => $sub ? $sub->grade : null,
+                        'feedback' => $sub ? $sub->feedback : null,
+                    ];
+                })->values(),
+                'summary' => [
+                    'max_assign' => $maxAssign,
+                    'max_act' => $maxAct,
+                    'max_pt' => $maxPt,
+                    'max_total' => $totalMax,
+                    'earned_assign' => $earnedAssign,
+                    'earned_act' => $earnedAct,
+                    'earned_pt' => $earnedPt,
+                    'earned_total' => $totalEarned,
+                    'assign_ps' => $maxAssign > 0 ? round(($earnedAssign / $maxAssign) * 100, 1) : 0,
+                    'act_ps' => $maxAct > 0 ? round(($earnedAct / $maxAct) * 100, 1) : 0,
+                    'pt_ps' => $maxPt > 0 ? round(($earnedPt / $maxPt) * 100, 1) : 0,
+                    'percentage' => $totalMax > 0 ? round(($totalEarned / $totalMax) * 100, 1) : 0,
+                ]
+            ];
+        });
+
+        return Inertia::render('Student/Grades', [
+            'courses' => $formattedCourses
+        ]);
     }
 }

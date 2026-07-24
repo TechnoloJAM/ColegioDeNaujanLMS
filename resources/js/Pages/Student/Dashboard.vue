@@ -3,7 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import Modal from '@/Components/Modal.vue';
-import { X, BellRing } from 'lucide-vue-next';
+import { X, BellRing, Sparkles } from 'lucide-vue-next';
 
 const props = defineProps({
     stats: Object,
@@ -21,6 +21,22 @@ const quickJoin = (code) => {
         onSuccess: () => joinForm.reset(),
     });
 };
+
+// --- ACADEMIC INSIGHTS PREVIEW & MODAL LOGIC ---
+const isAllRecommendationsModalOpen = ref(false);
+
+const openAllRecommendations = () => {
+    isAllRecommendationsModalOpen.value = true;
+};
+
+const closeAllRecommendations = () => {
+    isAllRecommendationsModalOpen.value = false;
+};
+
+// Max 2 Cards on Dashboard Preview
+const previewRecommendations = computed(() => {
+    return props.recommendations ? props.recommendations.slice(0, 2) : [];
+});
 
 // --- AUTO-EXPIRE ANNOUNCEMENTS AFTER 7 DAYS ---
 const activeAnnouncements = computed(() => {
@@ -42,7 +58,7 @@ const previewAnnouncements = computed(() => {
     return activeAnnouncements.value.slice(0, 3);
 });
 
-// --- "VIEW ALL" MODAL LOGIC ---
+// --- "VIEW ALL ANNOUNCEMENTS" MODAL LOGIC ---
 const isAllAnnouncementsModalOpen = ref(false);
 
 const openAllAnnouncements = () => {
@@ -82,15 +98,22 @@ const closeAllAnnouncements = () => {
             </div>
         </div>
 
+        <!-- ACADEMIC INSIGHTS (MAX 2 CARDS) -->
         <div v-if="recommendations && recommendations.length > 0" class="mb-5">
-            <div class="flex items-center gap-2 mb-2">
-                <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Academic Insights</h2>
+            <div class="flex items-center justify-between gap-2 mb-2">
+                <h2 class="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <Sparkles class="w-3 h-3 text-blue-500" />
+                    Academic Insights
+                </h2>
+                <button v-if="recommendations.length > 2" @click="openAllRecommendations" class="text-[9px] text-blue-600 font-bold hover:underline">
+                    View All ({{ recommendations.length }})
+                </button>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div v-for="rec in recommendations" :key="rec.id" class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-                    <span class="text-[8px] font-black uppercase text-red-600 bg-red-50 px-2 py-0.5 rounded">{{ rec.category }}</span>
-                    <p class="mt-2 text-sm font-bold text-slate-800">{{ rec.recommendation_text }}</p>
-                    <p class="mt-2 text-[10px] text-slate-500 italic">Reason: {{ rec.reasoning }}</p>
+                <div v-for="rec in previewRecommendations" :key="rec.id" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+                    <span class="text-[8px] font-black uppercase text-red-600 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded">{{ rec.category }}</span>
+                    <p class="mt-2 text-sm font-bold text-slate-800 dark:text-white">{{ rec.recommendation_text }}</p>
+                    <p class="mt-2 text-[10px] text-slate-500 dark:text-slate-400 italic">Reason: {{ rec.reasoning }}</p>
                 </div>
             </div>
         </div>
@@ -182,6 +205,30 @@ const closeAllAnnouncements = () => {
             </div>
         </div>
 
+        <!-- MODAL: ALL RECOMMENDATIONS -->
+        <Modal :show="isAllRecommendationsModalOpen" @close="closeAllRecommendations" maxWidth="lg">
+            <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[85vh] overflow-hidden">
+                <div class="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
+                    <h2 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight flex items-center gap-2">
+                        <Sparkles class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        All Academic Insights
+                    </h2>
+                    <button @click="closeAllRecommendations" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                        <X class="w-4 h-4"/>
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+                    <div v-for="rec in recommendations" :key="rec.id" class="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl p-4 shadow-sm">
+                        <span class="text-[8px] font-black uppercase text-red-600 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded">{{ rec.category }}</span>
+                        <p class="mt-2 text-sm font-bold text-slate-800 dark:text-white">{{ rec.recommendation_text }}</p>
+                        <p class="mt-2 text-[10px] text-slate-500 dark:text-slate-400 italic">Reason: {{ rec.reasoning }}</p>
+                    </div>
+                </div>
+            </div>
+        </Modal>
+
+        <!-- MODAL: ALL ANNOUNCEMENTS -->
         <Modal :show="isAllAnnouncementsModalOpen" @close="closeAllAnnouncements" maxWidth="md">
             <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[85vh] overflow-hidden">
                 
