@@ -8,58 +8,139 @@ use Illuminate\Support\Facades\Log;
 class GeminiService
 {
     protected $apiKey;
-    // Using 1.5 Flash: Fast, reliable, and standard for new free-tier accounts
+    protected $groqApiKey;
+    protected $openRouterApiKey; 
+    
     protected $baseUrl = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 
     public function __construct()
     {
         $this->apiKey = env('GEMINI_API_KEY');
+        $this->groqApiKey = env('GROQ_API_KEY');
+        $this->openRouterApiKey = env('OPENROUTER_API_KEY'); 
     }
 
     // =========================================================
-    // 1. AI CHATBOT SYSTEM
+    // 1. THE 4-TIER AI WATERFALL
     // =========================================================
     public function chat(string $message, string $context = '')
     {
-        if (empty($this->apiKey)) {
-            return "System Error: API Key is missing.";
-        }
-
         $finalPrompt = "CONTEXT: {$context}\n\nQUESTION: {$message}";
-        
-        $attempts = [
-            ['url' => 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent', 'name' => 'Gemini 3 Flash'],
-            ['url' => 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', 'name' => 'Gemini 2.5 Flash'],
-            ['url' => 'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent', 'name' => 'Gemini Pro Stable'],
-        ];
+        $hitRateLimit = false;
 
-        foreach ($attempts as $attempt) {
-            try {
-                $response = Http::timeout(20)
-                    ->withOptions([
-                        'verify' => false, 
-                        'curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]
-                    ])
-                    ->post("{$attempt['url']}?key={$this->apiKey}", [
-                        "contents" => [["parts" => [["text" => $finalPrompt]]]]
-                    ]);
+        // --- TIER 1: GOOGLE GEMINI ---
+        if (!empty($this->apiKey)) {
+            $googleAttempts = [
+                ['url' => 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent', 'name' => 'Gemini 3 Flash'],
+                ['url' => 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', 'name' => 'Gemini 2.5 Flash'],
+            ];
 
-                if ($response->successful()) {
-                    $data = $response->json();
-                    return $data['candidates'][0]['content']['parts'][0]['text'];
+            foreach ($googleAttempts as $attempt) {
+                try {
+                    $response = Http::timeout(15)->withOptions(['verify' => false])
+                        ->post("{$attempt['url']}?key={$this->apiKey}", [
+                            "contents" => [["parts" => [["text" => $finalPrompt]]]]
+                        ]);
+
+                    if ($response->successful()) {
+                        return $response->json()['candidates'][0]['content']['parts'][0]['text'] ?? "I couldn't process that.";
+                    }
+
+                    if ($response->status() === 429) {
+                        $hitRateLimit = true;
+                        Log::warning("Gemini Rate Limit Hit. Falling back to Tier 2 (Groq).");
+                        break; 
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Gemini Connection Error: " . $e->getMessage());
                 }
-                
-                Log::warning("Model {$attempt['name']} failed with status: " . $response->status());
-            } catch (\Exception $e) {
-                Log::error("Connection error on {$attempt['name']}: " . $e->getMessage());
             }
         }
 
-        return "AI Error: All model versions failed. Please check your network.";
-    } // This brace was likely missing!
+        // --- TIER 2: GROQ (1,000 Free Requests/Day) ---
+        if (!empty($this->groqApiKey)) {
+            $groqResponse = $this->fallbackToGroq($finalPrompt);
+            if ($groqResponse) return $groqResponse;
+        }
+
+        // --- TIER 3: OPENROUTER MULTI-MODEL (50 Free Requests/Day) ---
+        if (!empty($this->openRouterApiKey)) {
+            $openRouterResponse = $this->fallbackToOpenRouter($finalPrompt);
+            if ($openRouterResponse) return $openRouterResponse;
+        }
+
+        // --- TIER 4: THE FRIENDLY COOLDOWN ---
+        if ($hitRateLimit) {
+            return "Our AI assistant is experiencing high traffic right now! ⚡\n\nPlease try asking again in a few minutes, or use the quick buttons below to view your tasks and grades directly from the database.";
+        }
+
+        return "AI System is currently undergoing maintenance. Please try again later!";
+    }
 
     // =========================================================
-    // 2. BACKGROUND AI (For Student Dashboard)
+    // TIER 2 LOGIC (GROQ / LLAMA 3)
+    // =========================================================
+    private function fallbackToGroq($prompt)
+    {
+        try {
+            $response = Http::timeout(15)->withOptions(['verify' => false])
+                ->withHeaders([
+                    'Authorization' => 'Bearer ' . $this->groqApiKey,
+                    'Content-Type' => 'application/json',
+                ])
+                ->post("https://api.groq.com/openai/v1/chat/completions", [
+                    'model' => 'llama3-8b-8192', // Blistering fast Llama 3 model
+                    'messages' => [['role' => 'user', 'content' => $prompt]],
+                    'temperature' => 0.7,
+                ]);
+
+            if ($response->successful()) {
+                return $response->json()['choices'][0]['message']['content'] ?? null;
+            }
+        } catch (\Exception $e) {
+            Log::error("Groq Fallback Error: " . $e->getMessage());
+        }
+        return null;
+    }
+
+    // =========================================================
+    // TIER 3 LOGIC (OPENROUTER MULTI-MODEL LOOP)
+    // =========================================================
+    private function fallbackToOpenRouter($prompt)
+    {
+        // If one free model fails, it instantly tries the next one!
+        $freeModels = [
+            'meta-llama/llama-3.1-8b-instruct:free',
+            'google/gemma-4-31b-it:free', 
+            'cohere/north-mini-code:free'
+        ];
+
+        foreach ($freeModels as $model) {
+            try {
+                $response = Http::timeout(15)->withOptions(['verify' => false])
+                    ->withHeaders([
+                        'Authorization' => 'Bearer ' . $this->openRouterApiKey,
+                        'Content-Type' => 'application/json',
+                    ])
+                    ->post("https://openrouter.ai/api/v1/chat/completions", [
+                        'model' => $model,
+                        'messages' => [['role' => 'user', 'content' => $prompt]],
+                        'temperature' => 0.7,
+                    ]);
+
+                if ($response->successful()) {
+                    Log::info("OpenRouter succeeded using: " . $model);
+                    return $response->json()['choices'][0]['message']['content'] ?? null;
+                }
+            } catch (\Exception $e) {
+                Log::error("OpenRouter Error on {$model}: " . $e->getMessage());
+            }
+        }
+        return null;
+    }
+
+    // =========================================================
+    // BACKGROUND AI FUNCTIONS (JSON Data for Dashboards)
     // =========================================================
     
     public function recommendCourses($student, $availableCourses, $enrolledHistory)
@@ -94,11 +175,7 @@ class GeminiService
     private function callGeminiForJson($prompt)
     {
         try {
-            $response = Http::timeout(30)
-                ->withOptions([
-                    'verify' => false, 
-                    'curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]
-                ])
+            $response = Http::timeout(30)->withOptions(['verify' => false])
                 ->withHeaders(['Content-Type' => 'application/json'])
                 ->post("{$this->baseUrl}?key={$this->apiKey}", [
                     'contents' => [['parts' => [['text' => $prompt]]]]
