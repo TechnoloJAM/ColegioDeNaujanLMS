@@ -13,6 +13,19 @@ const page = usePage();
 const userId = page.props.auth.user.id;
 const storageKey = `lms_ai_chat_history_${userId}`;
 
+// --- NEW: SUGGESTION CHIPS LOGIC ---
+const suggestions = [
+    "Do I have missing tasks?",
+    "Show my grades",
+    "What are my enrolled classes?"
+];
+
+const sendSuggestion = (text) => {
+    userMessage.value = text;
+    sendMessage();
+};
+// -----------------------------------
+
 // --- PERSISTENCE LOGIC ---
 onMounted(() => {
     const savedChat = localStorage.getItem(storageKey);
@@ -20,7 +33,7 @@ onMounted(() => {
         messages.value = JSON.parse(savedChat);
     } else {
         messages.value = [
-            { role: 'ai', content: 'Hello! I am your AI Assistant. How can I help you today?' }
+            { role: 'ai', content: 'Hello! I am your **CDN LMS Support Assistant**. \n\nI can help you navigate the system, check your grades, and find missing tasks. *(Note: I am a system guide, not a tutor, so I cannot help with homework!)*' }
         ];
     }
 });
@@ -51,7 +64,7 @@ const toggleChat = () => {
     if (isOpen.value) scrollToBottom();
 };
 
-// NEW: Simple text formatter to make the AI's Bold text and Line Breaks look beautiful
+// Simple text formatter to make the AI's Bold text and Line Breaks look beautiful
 const formatMessage = (text) => {
     if (!text) return '';
     return text
@@ -72,7 +85,7 @@ const sendMessage = async () => {
     scrollToBottom();
 
     try {
-        // NEW: Silently pass the current screen context to the AI
+        // Silently pass the current screen context to the AI
         const response = await axios.post(route('ai.chat'), { 
             message: currentMessage,
             current_url: window.location.pathname,
@@ -104,7 +117,7 @@ const sendMessage = async () => {
         >
             <div v-show="isOpen" class="fixed z-50 flex flex-col bg-white dark:bg-slate-800 shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bottom-28 left-4 right-4 h-[60vh] rounded-2xl sm:bottom-24 sm:right-6 sm:left-auto sm:w-80 sm:h-[450px] sm:rounded-xl">
                 
-                <div class="bg-blue-600 p-3 sm:p-4 flex justify-between items-center shrink-0 shadow-md">
+                <div class="bg-blue-600 p-3 sm:p-4 flex justify-between items-center shrink-0 shadow-md z-10">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white backdrop-blur-sm">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
@@ -137,6 +150,16 @@ const sendMessage = async () => {
                     </div>
                 </div>
 
+                <!-- NEW: SUGGESTION CHIPS -->
+                <div v-if="page.props.auth.user.role === 'student'" class="px-3 py-2 bg-slate-50 dark:bg-slate-900/50 flex gap-2 overflow-x-auto scrollbar-hide shrink-0 border-t border-slate-200 dark:border-slate-700">
+                    <button v-for="suggestion in suggestions" :key="suggestion"
+                            @click="sendSuggestion(suggestion)"
+                            class="whitespace-nowrap px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-full text-[10px] font-bold transition-colors shadow-sm shrink-0">
+                        {{ suggestion }}
+                    </button>
+                </div>
+                <!-- ------------------------ -->
+
                 <div class="p-2 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shrink-0">
                     <form @submit.prevent="sendMessage" class="relative flex items-center gap-2">
                         <input v-model="userMessage" type="text" placeholder="Type a message..." class="w-full pl-4 pr-10 py-2 bg-slate-100 dark:bg-slate-900 border-0 rounded-full text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition-all" />
@@ -158,3 +181,14 @@ const sendMessage = async () => {
         </button>
     </div>
 </template>
+
+<style scoped>
+/* NEW: CSS to hide the scrollbar for the suggestion chips but keep them scrollable */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+</style>
