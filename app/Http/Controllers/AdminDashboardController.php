@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\Setting;
 use Carbon\Carbon;
+use App\Models\Department;
 
 class AdminDashboardController extends Controller
 {
@@ -219,11 +220,16 @@ class AdminDashboardController extends Controller
     public function users()
     {
         return Inertia::render('Admin/UserManagement', [
-            'users' => User::with('enrolledCourses:id,title')
-                ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at', 'contact_number', 'avatar')
-                ->orderBy('name')
+            'users' => User::with(['enrolledCourses:id,title', 'department:id,name'])
+                ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at', 'contact_number', 'avatar', 'department_id')
+                ->latest() // FIX: Brings newly created users to Page 1!
                 ->paginate(15),
-            'courses' => \App\Models\Course::select('id', 'title')->orderBy('title')->get()
+            'courses' => \App\Models\Course::select('id', 'title')->orderBy('title')->get(),
+            
+            // FIX: Fetches any active Dean associated with the department for the UI table
+            'departments' => Department::with(['users' => function($q) {
+                $q->where('role', 'dean')->where('status', 'active')->select('id', 'name', 'department_id');
+            }])->orderBy('name')->get() 
         ]);
     }
 
@@ -232,7 +238,8 @@ class AdminDashboardController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'role' => 'required|in:admin,teacher,student',
+            'role' => 'required|in:admin,dean,teacher,student',
+            'department_id' => 'nullable|exists:departments,id',
             'school_id' => 'nullable|string|max:50',
             'program' => 'nullable|string|max:100',
             'contact_number' => 'nullable|string|max:20',
@@ -244,6 +251,7 @@ class AdminDashboardController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'role' => $request->role,
+            'department_id' => in_array($request->role, ['dean', 'teacher']) ? $request->department_id : null,
             'school_id' => $request->school_id,
             'program' => $request->program,
             'contact_number' => $request->contact_number,
@@ -313,7 +321,8 @@ class AdminDashboardController extends Controller
     public function updateRole(Request $request, User $user)
     {
         $request->validate([
-            'role' => 'required|in:admin,teacher,student',
+            'role' => 'required|in:admin,dean,teacher,student',
+            'department_id' => 'nullable|exists:departments,id', // NEW: Validates department updates
             'password' => 'required|string'
         ]);
 
@@ -324,8 +333,10 @@ class AdminDashboardController extends Controller
         if ($user->id === auth()->id() && $request->role !== 'admin') {
             return back()->withErrors(['password' => 'You cannot demote your own admin account.']);
         }
-
-        $user->update(['role' => $request->role]);
+        $user->update([
+            'role' => $request->role,
+            'department_id' => in_array($request->role, ['dean', 'teacher']) ? $request->department_id : null
+        ]);
 
         return back()->with('success', "{$user->name} is now a " . ucfirst($request->role) . ".");
     }
@@ -379,6 +390,26 @@ class AdminDashboardController extends Controller
         }
         
         return redirect()->route('dashboard');
+    }
+
+    //department management
+    public function storeDepartment(Request $request)
+    {
+        $request->validate(['name' => 'required|string|max:255|unique:departments,name']);
+        Department::create(['name' => $request->name]);
+        return back()->with('success', 'Department added successfully.');
+    }
+
+    public function destroyDepartment(Request $request, Department $department)
+    {
+        $request->validate(['password' => 'required|string']);
+        
+        if (!Hash::check($request->password, auth()->user()->password)) {
+            return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        $department->delete();
+        return back()->with('success', 'Department deleted. Any users assigned to it have been unlinked.');
     }
 
     public function courses()

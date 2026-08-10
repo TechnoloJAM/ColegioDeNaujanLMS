@@ -12,6 +12,7 @@ use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AIChatController;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\CalendarController;
+use App\Http\Controllers\DeanDashboardController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -29,20 +30,24 @@ Route::get('/', function () {
 Route::get('/auth/google', [GoogleAuthController::class, 'redirect'])->name('auth.google');
 Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback']);
 
+// ONBOARDING
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/register/onboarding', [GoogleAuthController::class, 'onboarding'])->name('register.onboarding');
     Route::post('/register/complete', [GoogleAuthController::class, 'completeRegistration'])->name('register.complete');
 });
 
+// RESTORE SESSION
 Route::middleware(['auth'])->group(function () {
     Route::post('/admin/restore-session', [AdminDashboardController::class, 'restoreAdminSession'])->name('admin.restore-session');
 });
 
+// MAIN AUTHENTICATED ROUTES
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', function () {
         $role = auth()->user()->role;
         
         if ($role === 'admin') return redirect()->route('admin.dashboard');
+        if ($role === 'dean') return redirect()->route('dean.dashboard');
         if ($role === 'teacher') return redirect()->route('teacher.dashboard');
         
         if ($role === 'pending_teacher') {
@@ -74,6 +79,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         auth()->user()->notifications()->where('id', $id)->delete();
         return back();
     })->name('notifications.destroy');
+
+    // SHARED SUBMISSION ROUTES
+    Route::post('/assignments/{assignment}/submit', [StudentController::class, 'submit'])->name('assignments.submit');
+    Route::post('/assignments/{assignment}/unsubmit', [StudentController::class, 'unsubmit'])->name('assignments.unsubmit');
+
+    // SHARED CALENDAR
+    Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar.index');
 });
 
 // STUDENT ROUTES
@@ -84,15 +96,7 @@ Route::middleware(['auth', 'verified', 'role:student'])->prefix('student')->name
     Route::get('/courses/{course}', [StudentController::class, 'show'])->name('courses.show');
     Route::delete('/courses/{course}/leave', [StudentController::class, 'leave'])->name('courses.leave');
     Route::get('/my-assignments', [StudentController::class, 'assignments'])->name('assignments');
-    
-    // NEW: Read-Only Student Grades Route
     Route::get('/my-grades', [StudentController::class, 'grades'])->name('grades');
-});
-
-// SHARED SUBMISSION ROUTES
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::post('/assignments/{assignment}/submit', [StudentController::class, 'submit'])->name('assignments.submit');
-    Route::post('/assignments/{assignment}/unsubmit', [StudentController::class, 'unsubmit'])->name('assignments.unsubmit');
 });
 
 // TEACHER ROUTES
@@ -115,8 +119,6 @@ Route::middleware(['auth', 'verified', 'role:teacher'])->prefix('teacher')->name
     Route::patch('/lessons/{lesson}/request-unarchive', [LessonController::class, 'teacherUnarchive'])->name('lessons.unarchive');
     Route::post('/lessons/{lesson}/resubmit', [LessonController::class, 'resubmit'])->name('lessons.resubmit');
     Route::post('/courses/{course}/clone', [CourseController::class, 'clone'])->name('courses.clone');
-    
-    // FIX: Removed the extra /teacher/ and teacher. so it matches perfectly
     Route::patch('/courses/{course}/toggle-publish', [CourseController::class, 'togglePublish'])->name('courses.toggle-publish');
     
     // GRADEBOOK ROUTES
@@ -160,14 +162,22 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     
     // Grades
     Route::get('/grades', [AdminDashboardController::class, 'gradesOverview'])->name('grades.index');
-
+    
     // Global Calendar Events
     Route::post('/calendar/events', [CalendarController::class, 'storeEvent'])->name('calendar.store');
     Route::delete('/calendar/events/{globalEvent}', [CalendarController::class, 'destroyEvent'])->name('calendar.destroy');
+    
+    // Departments
+    Route::post('/departments', [AdminDashboardController::class, 'storeDepartment'])->name('departments.store');
+    Route::delete('/departments/{department}', [AdminDashboardController::class, 'destroyDepartment'])->name('departments.destroy');
 });
 
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar.index');
+// DEAN ROUTES
+Route::middleware(['auth', 'verified', 'role:dean'])->prefix('dean')->name('dean.')->group(function () {
+    Route::get('/dashboard', [\App\Http\Controllers\DeanDashboardController::class, 'index'])->name('dashboard');
+    Route::get('/faculty', [\App\Http\Controllers\DeanDashboardController::class, 'faculty'])->name('faculty'); // NEW
+    Route::get('/audit', [\App\Http\Controllers\DeanDashboardController::class, 'audit'])->name('audit'); // NEW
+    Route::get('/courses/{course}/audit', [\App\Http\Controllers\CourseController::class, 'show'])->name('courses.audit');
 });
 
 require __DIR__.'/auth.php';

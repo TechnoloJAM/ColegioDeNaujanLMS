@@ -57,9 +57,18 @@ class CourseController extends Controller
     public function show(Course $course)
     {
         $user = Auth::user();
-
         if ($user->role === 'student') abort(403, 'Students must access courses through the student dashboard.');
-        if ($user->role === 'teacher' && $course->teacher_id !== $user->id) abort(403, 'Unauthorized access.');
+        
+        // DEAN SECURITY CHECK WITH FAILSAFE
+        if ($user->role === 'dean') {
+            $course->load('teacher');
+            if (!$user->department_id || $course->teacher->department_id !== $user->department_id) {
+                abort(403, 'Forbidden: You can only audit courses within your assigned department.');
+            }
+        } 
+        else if ($user->role === 'teacher' && $course->teacher_id !== $user->id) {
+            abort(403, 'Unauthorized access.');
+        }
         
         $course->load([
             'assignments' => function($q) {
@@ -79,12 +88,9 @@ class CourseController extends Controller
     public function approveStudent(Request $request, Course $course, $userId)
     {
         if ($course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') abort(403);
-
         $enrollment = $course->enrollments()->where('user_id', $userId)->firstOrFail();
         $enrollment->update(['status' => 'approved']);
-
         User::findOrFail($userId)->notify(new EnrollmentApproved($course));
-
         return back()->with('success', 'Student approved and notified!');
     }
 
@@ -131,7 +137,6 @@ class CourseController extends Controller
     {
         $user = Auth::user();
         if ($course->teacher_id !== $user->id && $user->role !== 'admin') abort(403);
-
         $course->delete();
         return redirect()->route('teacher.courses.index')->with('success', 'Course deleted successfully.');
     }
@@ -153,7 +158,6 @@ class CourseController extends Controller
 
         if ($courseParam === 'all') {
             $managedCoursesQuery = ($user->role === 'admin') ? Course::query() : Course::where('teacher_id', $teacherId);
-
             $coursesWithData = $managedCoursesQuery->with(['teacher:id,name', 'assignments'])
                 ->with(['enrollments' => function($q) {
                     $q->where('status', 'approved')->with(['user' => function($userQ) {
@@ -179,11 +183,9 @@ class CourseController extends Controller
                     if ($c->assignments->isNotEmpty()) {
                         $courseAssignmentIds = $c->assignments->pluck('id')->toArray();
                         $submissions = $student->submissions->whereIn('assignment_id', $courseAssignmentIds);
-
                         foreach($submissions as $sub) {
                             $grade = (float)$sub->grade;
                             $type = $sub->assignment ? $sub->assignment->type : null;
-
                             $studentTotal += $grade;
                             if ($type === 'assignment') $assignmentScore += $grade;
                             elseif ($type === 'activity') $activityScore += $grade;
@@ -192,7 +194,6 @@ class CourseController extends Controller
                     }
 
                     $percentage = $totalCoursePoints > 0 ? round(($studentTotal / $totalCoursePoints) * 100, 1) : 0;
-
                     return [
                         'id' => $student->id,
                         'name' => $student->name,
@@ -202,7 +203,6 @@ class CourseController extends Controller
                         'activity_score' => $activityScore,
                         'pt_score' => $ptScore,
                         'percentage' => $percentage,
-                        // Clean submissions array for the excel exporter
                         'submissions' => $student->submissions->whereIn('assignment_id', $c->assignments->pluck('id'))->values()->map(function($sub) {
                             return [
                                 'assignment_id' => $sub->assignment_id,
