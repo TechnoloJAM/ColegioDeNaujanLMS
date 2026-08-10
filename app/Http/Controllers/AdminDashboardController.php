@@ -399,29 +399,54 @@ class AdminDashboardController extends Controller
     public function storeCourse(Request $request)
     {
         $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'difficulty_level' => 'required|in:beginner,intermediate,advanced,final',
             'teacher_id' => 'required|exists:users,id',
-            'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'courses' => 'required|array|min:1',
+            'courses.*.title' => 'required|string|max:255',
+            'courses.*.description' => 'nullable|string',
+            'courses.*.difficulty_level' => 'required|in:beginner,intermediate,advanced,final',
+            'courses.*.days' => 'nullable|array',
+            'courses.*.start_time' => 'nullable', // Removed buggy Laravel time rules
+            'courses.*.end_time' => 'nullable',   // Removed buggy Laravel time rules
+            'courses.*.room' => 'nullable|string|max:100',
         ]);
 
-        $thumbnailPath = null;
-        if ($request->hasFile('thumbnail')) {
-            $thumbnailPath = $request->file('thumbnail')->store('thumbnails', 'public');
+        $teacherId = $request->teacher_id;
+        $coursesToSave = $request->courses;
+
+        // 1. Conflict Prevention Shield & Time Validation
+        foreach ($coursesToSave as $index => $c) {
+            
+            // FIX: Manual time check to prevent 500 Fatal Errors
+            if (!empty($c['start_time']) && !empty($c['end_time']) && $c['start_time'] >= $c['end_time']) {
+                return back()->withErrors(["courses.{$index}.end_time" => "End time must be after the start time."]);
+            }
+
+            if (!empty($c['days']) && !empty($c['start_time']) && !empty($c['end_time'])) {
+                $conflict = $this->checkScheduleConflict($teacherId, $c['days'], $c['start_time'], $c['end_time'], $c['room'] ?? null);
+                
+                if ($conflict) {
+                    return back()->withErrors(["courses.{$index}.start_time" => "Conflict in Tab " . ($index + 1) . ": {$conflict}"]);
+                }
+            }
         }
 
-        Course::create([
-            'teacher_id' => $request->teacher_id,
-            'enrollment_code' => strtoupper(substr(md5(uniqid()), 0, 6)),
-            'title' => $request->title,
-            'description' => $request->description,
-            'difficulty_level' => $request->difficulty_level,
-            'thumbnail' => $thumbnailPath ? '/storage/' . $thumbnailPath : null,
-            'is_published' => false,
-        ]);
+        // 2. Save Everything if no conflicts exist
+        foreach ($coursesToSave as $c) {
+            Course::create([
+                'teacher_id' => $teacherId,
+                'enrollment_code' => strtoupper(substr(md5(uniqid()), 0, 6)),
+                'title' => $c['title'],
+                'description' => $c['description'] ?? null,
+                'difficulty_level' => $c['difficulty_level'],
+                'days' => $c['days'] ?? null,
+                'start_time' => $c['start_time'] ?? null,
+                'end_time' => $c['end_time'] ?? null,
+                'room' => $c['room'] ?? null,
+                'is_published' => false,
+            ]);
+        }
 
-        return back()->with('success', 'Course created and assigned successfully.');
+        return back()->with('success', count($coursesToSave) . ' Subject(s) distributed and scheduled successfully.');
     }
 
     public function updateCourse(Request $request, Course $course)
@@ -432,9 +457,26 @@ class AdminDashboardController extends Controller
             'difficulty_level' => 'required|in:beginner,intermediate,advanced,final',
             'teacher_id' => 'required|exists:users,id',
             'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'days' => 'nullable|array',
+            'start_time' => 'nullable', // Removed buggy Laravel time rules
+            'end_time' => 'nullable',   // Removed buggy Laravel time rules
+            'room' => 'nullable|string|max:100',
         ]);
 
-        $data = $request->only('title', 'description', 'difficulty_level', 'teacher_id');
+        // FIX: Manual time check 
+        if (!empty($request->start_time) && !empty($request->end_time) && $request->start_time >= $request->end_time) {
+            return back()->withErrors(["end_time" => "End time must be after the start time."]);
+        }
+
+        // Conflict Shield (Excluding the current course so it doesn't conflict with itself)
+        if (!empty($request->days) && !empty($request->start_time) && !empty($request->end_time)) {
+            $conflict = $this->checkScheduleConflict($request->teacher_id, $request->days, $request->start_time, $request->end_time, $request->room, $course->id);
+            if ($conflict) {
+                return back()->withErrors(["start_time" => "Schedule Conflict: {$conflict}"]);
+            }
+        }
+
+        $data = $request->only('title', 'description', 'difficulty_level', 'teacher_id', 'days', 'start_time', 'end_time', 'room');
 
         if ($request->hasFile('thumbnail')) {
             if ($course->thumbnail) {
@@ -447,7 +489,63 @@ class AdminDashboardController extends Controller
 
         $course->update($data);
 
-        return back()->with('success', 'Course updated successfully.');
+        return back()->with('success', 'Course and schedule updated successfully.');
+    }
+
+    private function checkScheduleConflict($teacherId, $days, $startTime, $endTime, $room, $excludeCourseId = null)
+    {
+        $conflicts = Course::where(function($q) use ($teacherId, $room) {
+                $q->where('teacher_id', $teacherId);
+                if (!empty($room)) {
+                    $q->orWhere('room', $room);
+                }
+            })
+            ->when($excludeCourseId, function($q) use ($excludeCourseId) {
+                $q->where('id', '!=', $excludeCourseId);
+            })
+            ->where(function($q) use ($startTime, $endTime) {
+                // The mathematical formula for Time Overlap
+                $q->where('start_time', '<', $endTime)
+                  ->where('end_time', '>', $startTime);
+            })
+            ->get();
+
+        foreach ($conflicts as $conflict) {
+            if ($conflict->days) {
+                $conflictDays = is_string($conflict->days) ? json_decode($conflict->days, true) : $conflict->days;
+                
+                if (is_array($conflictDays) && count(array_intersect($days, $conflictDays)) > 0) {
+                    if ($conflict->teacher_id == $teacherId) {
+                        return "Instructor is already teaching '{$conflict->title}' during this time.";
+                    } else {
+                        return "Room '{$room}' is occupied by '{$conflict->title}' during this time.";
+                    }
+                }
+            }
+        }
+
+        return null; 
+    }
+
+    public function bulkDestroyCourses(Request $request)
+    {
+        $request->validate([
+            'course_ids' => 'required|array',
+            'course_ids.*' => 'exists:courses,id',
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, auth()->user()->password)) {
+            return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        $courses = Course::whereIn('id', $request->course_ids)->get();
+        
+        foreach ($courses as $course) {
+            $course->forceDelete(); 
+        }
+
+        return back()->with('success', count($request->course_ids) . ' course(s) and their related files permanently deleted.');
     }
 
     public function materials()
