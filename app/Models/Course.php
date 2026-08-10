@@ -11,7 +11,28 @@ class Course extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['teacher_id', 'enrollment_code', 'title', 'description', 'difficulty_level', 'thumbnail', 'is_published', 'is_admin_hidden'];
+    protected $fillable = [
+        'teacher_id', 
+        'enrollment_code', 
+        'title', 
+        'description', 
+        'difficulty_level', 
+        'thumbnail', 
+        'is_published', 
+        'is_admin_hidden',
+        // NEW SCHEDULE COLUMNS
+        'days',
+        'start_time',
+        'end_time',
+        'room'
+    ];
+
+    // TELL LARAVEL TO CAST JSON TO ARRAY AUTOMATICALLY
+    protected $casts = [
+        'is_published' => 'boolean',
+        'is_admin_hidden' => 'boolean',
+        'days' => 'array',
+    ];
 
     protected static function boot()
     {

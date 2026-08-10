@@ -10,10 +10,15 @@ import InputError from '@/Components/InputError.vue';
 import { 
     Plus, X, Trash2, Calendar as CalIcon, ChevronRight, 
     Info, FileText, Lock, Unlock, Sparkles, Landmark, 
-    AlertTriangle, Wrench, CheckCircle2 
+    AlertTriangle, Wrench, CheckCircle2, Clock
 } from 'lucide-vue-next';
 
-const props = defineProps({ attributes: Array });
+const props = defineProps({ 
+    attributes: Array,
+    schedules: Array, 
+    teachers: Array   
+});
+
 const user = usePage().props.auth.user;
 
 // --- DYNAMIC THEMING ---
@@ -30,24 +35,30 @@ onMounted(() => {
 const viewMode = ref('monthly');
 const selectedDate = ref(new Date());
 
-// STATIC INITIAL PAGE: Prevents DOM rebuilds on day clicks
+const selectedAdminTeacher = ref('all'); 
+
 const initialPage = ref({
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear()
 });
 
-// --- DYNAMIC FILTERS (SEGREGATED BY ROLE) ---
+// --- DYNAMIC FILTERS ---
 const availableFilters = computed(() => {
-    if (user.role === 'admin') return [{ id: 'Institution', name: 'Global Events', color: 'purple' }];
+    if (user.role === 'admin') return [
+        { id: 'Institution', name: 'Global Events', color: 'purple' },
+        { id: 'Schedule', name: 'Class Schedules', color: 'teal' } 
+    ];
     if (user.role === 'teacher') return [
         { id: 'Institution', name: 'School Events', color: 'purple' }, 
         { id: 'Task', name: 'Assignments', color: 'blue' }, 
-        { id: 'Material', name: 'Material Timers', color: 'orange' }
+        { id: 'Material', name: 'Material Timers', color: 'orange' },
+        { id: 'Schedule', name: 'My Classes', color: 'teal' } 
     ];
     return [
         { id: 'Institution', name: 'School Events', color: 'purple' }, 
         { id: 'Task', name: 'My Tasks', color: 'blue' }, 
-        { id: 'AI Study Tip', name: 'AI Tips', color: 'indigo' }
+        { id: 'AI Study Tip', name: 'AI Tips', color: 'indigo' },
+        { id: 'Schedule', name: 'My Classes', color: 'teal' } 
     ];
 });
 
@@ -61,44 +72,97 @@ const getFilterClass = (f) => {
     if (!activeFilters.value.includes(f.id)) {
         return 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700';
     }
-    // Dynamic Active Colors
     const colorMap = {
         'purple': 'bg-purple-600 text-white border-purple-600 shadow-md',
         'blue': 'bg-blue-600 text-white border-blue-600 shadow-md',
         'orange': 'bg-orange-500 text-white border-orange-500 shadow-md',
-        'indigo': 'bg-indigo-500 text-white border-indigo-500 shadow-md'
+        'indigo': 'bg-indigo-500 text-white border-indigo-500 shadow-md',
+        'teal': 'bg-teal-500 text-white border-teal-500 shadow-md' 
     };
     return colorMap[f.color] || 'bg-blue-600 text-white';
 };
 
+// --- RECURRING SCHEDULE MATH ---
+const dayMap = { 'Sun': 1, 'Mon': 2, 'Tue': 3, 'Wed': 4, 'Thu': 5, 'Fri': 6, 'Sat': 7 };
+
+const formatTime = (timeString) => {
+    if (!timeString) return '';
+    const parts = timeString.split(':');
+    if (parts.length < 2) return timeString;
+    const d = new Date(); 
+    d.setHours(parseInt(parts[0]), parseInt(parts[1]));
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
 // V-Calendar Attributes mapping
 const filteredAttributes = computed(() => {
-    // Keep existing event dot logic
-    const attrs = props.attributes
+    // 1. Map existing standard events
+    let attrs = props.attributes
         .filter(a => activeFilters.value.includes(a.customData.type))
         .map(a => ({
             ...a,
+            customData: {
+                ...a.customData,
+                raw_date: a.dates 
+            },
             dot: { color: a.customData.color, class: 'scale-150 shadow-sm' }
         }));
 
-    // 1. Solid highlight for the currently selected date
+    // 2. Map dynamically recurring class schedules
+    if (activeFilters.value.includes('Schedule') && props.schedules) {
+        let validSchedules = props.schedules;
+        
+        // Filter by selected teacher
+        if (user.role === 'admin' && selectedAdminTeacher.value !== 'all') {
+            validSchedules = validSchedules.filter(s => s.teacher_id == selectedAdminTeacher.value);
+        } else if (user.role === 'teacher') {
+            validSchedules = validSchedules.filter(s => s.teacher_id === user.id);
+        }
+
+        validSchedules.forEach(course => {
+            // FIX: Safely parse JSON strings from the database just in case the model cast failed
+            let daysArray = [];
+            try {
+                daysArray = typeof course.days === 'string' ? JSON.parse(course.days) : course.days;
+            } catch (e) {
+                daysArray = [];
+            }
+
+            if (daysArray && Array.isArray(daysArray)) {
+                const weekdays = daysArray.map(d => dayMap[d]).filter(Boolean);
+                
+                if (weekdays.length > 0) {
+                    attrs.push({
+                        key: `schedule-${course.id}`,
+                        customData: {
+                            type: 'Schedule',
+                            category: 'Class Schedule',
+                            title: course.title,
+                            description: `${formatTime(course.start_time)} - ${formatTime(course.end_time)} | Room: ${course.room || 'TBA'}`,
+                            course_title: user.role === 'admin' ? `Teacher: ${course.teacher?.name || 'Unassigned'}` : null,
+                            color: 'teal', 
+                            start_time: course.start_time, 
+                            weekdays: weekdays 
+                        },
+                        // FIX: Wrapped in 'repeat' to satisfy V-Calendar v3 requirements
+                        dates: { repeat: { weekdays: weekdays } }, 
+                        dot: { color: 'teal', class: 'scale-150 shadow-sm' } 
+                    });
+                }
+            }
+        });
+    }
+
     attrs.push({
         key: 'selected-date',
-        highlight: {
-            color: 'blue',
-            fillMode: 'solid'
-        },
+        highlight: { color: 'blue', fillMode: 'solid' },
         dates: selectedDate.value,
         order: -10 
     });
 
-    // 2. Subtle outline for the actual present day
     attrs.push({
         key: 'actual-today',
-        highlight: {
-            color: 'blue',
-            fillMode: 'outline'
-        },
+        highlight: { color: 'blue', fillMode: 'outline' },
         dates: new Date(),
         order: -20
     });
@@ -108,32 +172,47 @@ const filteredAttributes = computed(() => {
 
 // Agenda items for the selected day
 const dayEvents = computed(() => {
-    return filteredAttributes.value.filter(a => 
-        a.customData && // Protects against the system reading highlights as events
-        new Date(a.dates).toDateString() === selectedDate.value.toDateString()
-    );
+    return filteredAttributes.value.filter(a => {
+        if (!a.customData) return false;
+
+        // Check recurring schedules safely
+        if (a.customData.type === 'Schedule' && a.customData.weekdays) {
+            const selectedWeekday = selectedDate.value.getDay() + 1; // 1=Sun, 2=Mon
+            return a.customData.weekdays.includes(selectedWeekday);
+        }
+
+        // Check standard events safely
+        if (a.customData.raw_date) {
+            const dateObj = new Date(a.customData.raw_date);
+            if (!isNaN(dateObj)) {
+                return dateObj.toDateString() === selectedDate.value.toDateString();
+            }
+        }
+
+        return false;
+    }).sort((a, b) => {
+        const timeA = a.customData.start_time || '24:00';
+        const timeB = b.customData.start_time || '24:00';
+        return timeA.localeCompare(timeB);
+    });
 });
 
-// --- EXACT ROUTING LOGIC ---
+// --- ROUTING LOGIC ---
 const getLink = (data) => {
-    if (data.is_admin_item || data.type === 'AI Study Tip') return null;
-    
-    // Exact Teacher Routing
+    if (data.type === 'Schedule' || data.is_admin_item || data.type === 'AI Study Tip') return null;
     if (user.role === 'teacher') {
         if (data.is_task) return route('teacher.assignments.show', data.id);
         if (data.is_material) return route('teacher.courses.show', data.course_id) + '?tab=materials&target=' + data.id;
     }
-    
-    // Exact Student Routing
     if (user.role === 'student' && data.course_id) {
         return route('student.courses.show', data.course_id) + '?tab=assignments&target=' + data.id;
     }
-    
     return null;
 };
 
 // --- ICON RESOLVER ---
 const getIcon = (data) => {
+    if (data.type === 'Schedule') return Clock;
     if (data.type === 'Institution') {
         if (data.category === 'Holiday') return AlertTriangle;
         if (data.category === 'Maintenance') return Wrench;
@@ -152,6 +231,7 @@ const getIconColorClass = (color) => {
         'orange': 'text-orange-500 dark:text-orange-400',
         'red': 'text-red-500 dark:text-red-400',
         'green': 'text-emerald-500 dark:text-emerald-400',
+        'teal': 'text-teal-500 dark:text-teal-400', 
         'indigo': 'text-indigo-500 dark:text-indigo-400',
         'gray': 'text-slate-500 dark:text-slate-400'
     };
@@ -175,7 +255,7 @@ const deleteEvent = (id) => {
     <AuthenticatedLayout>
         <div class="max-w-7xl mx-auto px-3 sm:px-6 flex flex-col h-full md:h-[calc(100vh-80px)] pb-12 md:pb-6">
             
-            <div class="flex justify-between items-center mb-3 shrink-0 mt-1 sm:mt-0">
+            <div class="flex justify-between items-center mb-3 shrink-0 mt-1 sm:mt-0 flex-wrap gap-2">
                 <div>
                     <h1 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2 tracking-tight">
                         <CalIcon class="text-blue-600 dark:text-blue-500 w-5 h-5 sm:w-6 sm:h-6"/> 
@@ -186,13 +266,20 @@ const deleteEvent = (id) => {
                     </p>
                 </div>
                 
-                <div class="flex gap-2">
-                    <button v-if="user.role === 'admin'" @click="showCreate = true" class="p-2 sm:px-3 sm:py-2 bg-purple-600 text-white rounded-lg shadow-sm active:scale-95 transition-all flex items-center gap-1.5">
-                        <Plus class="w-4 h-4"/><span class="hidden sm:inline text-[10px] font-black uppercase tracking-widest">New Event</span>
+                <div class="flex items-center gap-2">
+                    
+                    <select v-if="user.role === 'admin'" v-model="selectedAdminTeacher" class="text-[9px] font-black uppercase rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 shadow-sm px-2 py-1 h-8 focus:ring-blue-500 cursor-pointer">
+                        <option value="all">All Instructors</option>
+                        <option v-for="t in teachers" :key="t.id" :value="t.id">{{ t.name }}</option>
+                    </select>
+
+                    <button v-if="user.role === 'admin'" @click="showCreate = true" class="px-2 sm:px-3 h-8 bg-purple-600 text-white rounded-lg shadow-sm active:scale-95 transition-all flex items-center gap-1.5">
+                        <Plus class="w-4 h-4"/><span class="hidden sm:inline text-[9px] font-black uppercase tracking-widest">New Event</span>
                     </button>
-                    <div class="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                        <button @click="viewMode = 'monthly'" :class="{'bg-white dark:bg-slate-600 shadow-sm text-slate-900 dark:text-white': viewMode === 'monthly', 'text-slate-500': viewMode !== 'monthly'}" class="px-2.5 sm:px-3 py-1 text-[9px] font-black rounded-md uppercase transition-all">Month</button>
-                        <button @click="viewMode = 'weekly'" :class="{'bg-white dark:bg-slate-600 shadow-sm text-slate-900 dark:text-white': viewMode === 'weekly', 'text-slate-500': viewMode !== 'weekly'}" class="px-2.5 sm:px-3 py-1 text-[9px] font-black rounded-md uppercase transition-all">Week</button>
+                    
+                    <div class="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm h-8">
+                        <button @click="viewMode = 'monthly'" :class="{'bg-white dark:bg-slate-600 shadow-sm text-slate-900 dark:text-white': viewMode === 'monthly', 'text-slate-500': viewMode !== 'monthly'}" class="px-2.5 sm:px-3 text-[9px] font-black rounded-md uppercase transition-all flex items-center">Month</button>
+                        <button @click="viewMode = 'weekly'" :class="{'bg-white dark:bg-slate-600 shadow-sm text-slate-900 dark:text-white': viewMode === 'weekly', 'text-slate-500': viewMode !== 'weekly'}" class="px-2.5 sm:px-3 text-[9px] font-black rounded-md uppercase transition-all flex items-center">Week</button>
                     </div>
                 </div>
             </div>
@@ -208,7 +295,9 @@ const deleteEvent = (id) => {
             <div class="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 overflow-hidden pb-4">
                 
                 <div class="w-full lg:w-7/12 xl:w-2/3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2 sm:p-4 shadow-sm shrink-0 lg:shrink flex flex-col min-h-[350px]">
+                    <!-- FIX: Added dynamic :key to completely force V-Calendar to redraw when the admin changes the dropdown -->
                     <Calendar 
+                        :key="`cal-view-${selectedAdminTeacher}-${activeFilters.length}`"
                         expanded 
                         borderless 
                         transparent 
@@ -235,10 +324,10 @@ const deleteEvent = (id) => {
                         
                         <div v-if="dayEvents.length === 0" class="flex flex-col items-center justify-center h-full opacity-40 py-8">
                             <CalIcon class="mb-3 w-8 h-8 text-slate-400"/> 
-                            <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">No events scheduled</p>
+                            <p class="text-[10px] font-bold uppercase tracking-widest text-slate-500">No events or classes scheduled</p>
                         </div>
 
-                        <div v-for="e in dayEvents" :key="e.key" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm relative overflow-hidden group">
+                        <div v-for="e in dayEvents" :key="e.key" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm relative overflow-hidden group" :class="e.customData.type === 'Schedule' ? 'border-l-4 border-l-teal-500' : ''">
                             
                             <div class="absolute right-[-10px] top-1/2 -translate-y-1/2 opacity-5 pointer-events-none">
                                 <component :is="getIcon(e.customData)" class="w-24 h-24" :class="getIconColorClass(e.customData.color)" />
@@ -255,7 +344,7 @@ const deleteEvent = (id) => {
                                         {{ e.customData.title }}
                                     </h3>
                                     
-                                    <p v-if="e.customData.description" class="text-[10px] text-slate-600 dark:text-slate-400 mt-1 leading-snug">{{ e.customData.description }}</p>
+                                    <p v-if="e.customData.description" class="text-[10px] text-slate-600 dark:text-slate-400 mt-1 font-bold leading-snug">{{ e.customData.description }}</p>
                                     
                                     <div v-if="e.customData.course_title" class="mt-2 text-[8px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 inline-block px-1.5 py-0.5 rounded">
                                         {{ e.customData.course_title }}
@@ -279,6 +368,7 @@ const deleteEvent = (id) => {
             </div>
         </div>
 
+        <!-- CREATE EVENT MODAL -->
         <Modal :show="showCreate" @close="showCreate = false" maxWidth="sm">
             <div class="p-5 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800">
                 <h2 class="text-sm font-black uppercase dark:text-white mb-4 flex items-center gap-2">
@@ -323,7 +413,6 @@ const deleteEvent = (id) => {
 </template>
 
 <style>
-/* Modern typography overrides for V-Calendar to keep it incredibly compact and uniform */
 .custom-calendar { font-family: inherit; }
 .custom-calendar .vc-header { padding: 8px 12px; margin-bottom: 4px; }
 .custom-calendar .vc-title { font-weight: 900; font-size: 0.95rem; color: #3b82f6; text-transform: uppercase; letter-spacing: -0.02em; }

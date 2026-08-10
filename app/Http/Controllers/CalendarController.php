@@ -5,6 +5,8 @@ use App\Models\Assignment;
 use App\Models\GlobalEvent;
 use App\Models\Lesson;
 use App\Models\Recommendation;
+use App\Models\Course; // NEW IMPORT
+use App\Models\User;   // NEW IMPORT
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +16,19 @@ class CalendarController extends Controller {
     public function index() {
         $user = auth()->user();
         $attributes = collect();
+
+        // ==========================================
+        // NEW: FETCH SCHEDULES & TEACHERS
+        // ==========================================
+        $schedules = Course::whereNotNull('days')
+            ->whereNotNull('start_time')
+            ->with('teacher:id,name') // Get the teacher's name for the Admin filter
+            ->get(['id', 'title', 'days', 'start_time', 'end_time', 'room', 'teacher_id']);
+
+        $teachers = User::where('role', 'teacher')
+            ->where('status', 'active')
+            ->get(['id', 'name']);
+        // ==========================================
 
         // 1. ADMIN ONLY: Only see the Global Events they manage
         if ($user->role === 'admin') {
@@ -30,7 +45,12 @@ class CalendarController extends Controller {
                     'is_admin_item' => true
                 ]
             ]);
-            return Inertia::render('Calendar/Index', ['attributes' => $events]);
+            
+            return Inertia::render('Calendar/Index', [
+                'attributes' => $events,
+                'schedules' => $schedules, // NEW
+                'teachers' => $teachers    // NEW
+            ]);
         }
 
         // 2. TEACHER & STUDENT: Role Segregated Content
@@ -51,7 +71,7 @@ class CalendarController extends Controller {
         $attributes = $attributes->concat($globalEvents);
 
         // Tasks (Assignments/Quizzes)
-        $taskQuery = Assignment::with('course:id,title');
+        $taskQuery = Assignment::with('course:id,title')->whereNotNull('due_date');
         if ($user->role === 'student') {
             $taskQuery->whereIn('course_id', $user->enrolledCourses()->pluck('course_id'))
                       ->with(['submissions' => fn($q) => $q->where('user_id', $user->id)]);
@@ -121,7 +141,11 @@ class CalendarController extends Controller {
             $attributes = $attributes->concat($aiBlocks);
         }
 
-        return Inertia::render('Calendar/Index', ['attributes' => $attributes->values()]);
+        return Inertia::render('Calendar/Index', [
+            'attributes' => $attributes->values(),
+            'schedules' => $schedules, // NEW
+            'teachers' => $teachers    // NEW
+        ]);
     }
 
     public function storeEvent(Request $request) {
