@@ -24,6 +24,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar', 
         'program', 
         'email_verified_at', 
+        'department_id',
     ];
 
     protected $hidden = [
@@ -60,5 +61,9 @@ class User extends Authenticatable implements MustVerifyEmail
     public function recommendations()
     {
         return $this->hasMany(Recommendation::class);
+    }
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
     }
 }

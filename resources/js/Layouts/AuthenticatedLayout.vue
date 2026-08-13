@@ -153,6 +153,12 @@ const menus = computed(() => {
             { name: 'Approvals', route: 'admin.materials', icon: icons.assignments, badge: pendingMaterialsCount.value },
             { name: 'Calendar', route: 'calendar.index', icon: icons.calendar },
         ];
+    } else if (user.role === 'dean') {
+        return [
+            { name: 'Overview', route: 'dean.dashboard', icon: icons.dashboard },
+            { name: 'Faculty', route: 'dean.faculty', icon: icons.users },
+            { name: 'Course Audit', route: 'dean.audit', icon: icons.courses },
+        ];
     }
     return [];
 });
@@ -273,7 +279,8 @@ defineExpose({
                         <svg v-if="isDark" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                         <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
                     </button>
-                    <button @click="showingNotifications = !showingNotifications" class="relative p-2 text-slate-500 dark:text-slate-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition focus:outline-none">
+                    <!-- HIDE FROM DEAN -->
+                    <button v-if="user.role !== 'dean'" @click="showingNotifications = !showingNotifications" class="relative p-2 text-slate-500 dark:text-slate-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition focus:outline-none">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                         <span v-if="unreadCount > 0" class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-900 animate-pulse"></span>
                     </button>
@@ -376,7 +383,8 @@ defineExpose({
             </Link>
         </div>
 
-        <div class="hidden md:block fixed z-40 bottom-6 right-20 transition-all duration-300">
+        <!-- HIDE FROM DEAN -->
+        <div v-if="user.role !== 'dean'" class="hidden md:block fixed z-40 bottom-6 right-20 transition-all duration-300">
             <button @click="showingNotifications = !showingNotifications" 
                     class="relative p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full shadow-lg hover:shadow-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition hover:-translate-y-1 text-slate-600 dark:text-slate-300 focus:outline-none">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
@@ -384,7 +392,8 @@ defineExpose({
             </button>
         </div>
 
-        <AIChatWidget />
+        <!-- HIDE FROM DEAN -->
+        <AIChatWidget v-if="user.role !== 'dean'" />
 
         <Modal :show="confirmingToggle" @close="confirmingToggle = false" maxWidth="sm">
             <div class="p-6 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800">

@@ -1,18 +1,28 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, onMounted, nextTick, computed, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import RichTextEditor from '@/Components/RichTextEditor.vue';
-import { Eye, Download } from 'lucide-vue-next';
+import { 
+    ChevronLeft, Calendar, Clock, Trophy, 
+    FileText, Paperclip, ExternalLink, Send, Undo2, Filter, Eye, Download, CheckCircle2 
+} from 'lucide-vue-next';
 
 const props = defineProps({ course: Object });
 const page = usePage();
 const currentUser = page.props.auth.user;
 
 const requireApproval = computed(() => page.props.requireApproval ?? true);
+
+// NEW: Smart Back Button Logic
+const backUrl = computed(() => {
+    if (currentUser.role === 'dean') return route('dean.dashboard');
+    if (currentUser.role === 'admin') return route('admin.courses.index');
+    return route('teacher.courses.index');
+});
 
 const activeTab = ref('students');
 const studentSubTab = ref('accepted');
@@ -120,7 +130,6 @@ const displayedMaterials = computed(() => {
     else if (materialFilter.value === 'rejected') activeList = rejectedMaterials.value;
     else activeList = archivedMaterials.value;
 
-    // SORT: Newest at the top, oldest at the bottom
     return [...activeList].sort((a, b) => {
         return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
     });
@@ -142,16 +151,13 @@ const getYouTubeVideoId = (url) => {
 
 const formatRichText = (htmlContent) => {
     if (!htmlContent) return '';
-    
     let processed = htmlContent.replace(/<iframe/gi, '<iframe class="hidden sm:block w-full max-w-[320px] sm:max-w-[400px] aspect-video rounded-lg shadow-sm my-3 border border-slate-200 dark:border-slate-700"');
-
     const ytRegex = /(?<!href="|src=")(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})(?=[^\w-]|$)/gi;
     
     processed = processed.replace(ytRegex, (match, videoId) => {
         return `
         <div class="my-3 w-full max-w-[320px] sm:max-w-[400px] not-prose">
             <iframe class="hidden sm:block w-full aspect-video rounded-lg shadow-sm border border-slate-200 dark:border-slate-700" src="https://www.youtube-nocookie.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>
-            
             <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" class="sm:hidden relative flex flex-col items-center justify-center w-full aspect-video bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 transition group !no-underline overflow-hidden">
                 <img src="https://img.youtube.com/vi/${videoId}/hqdefault.jpg" class="absolute inset-0 w-full h-full object-cover opacity-70 group-hover:opacity-90 transition-opacity" alt="Video Thumbnail" />
                 <div class="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors"></div>
@@ -162,7 +168,6 @@ const formatRichText = (htmlContent) => {
             </a>
         </div>`;
     });
-
     return processed;
 };
 
@@ -215,7 +220,6 @@ const filteredAssignments = computed(() => {
         return true;
     });
 
-    // SORT: Newest at the top, oldest at the bottom
     return filtered.sort((a, b) => {
         return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
     });
@@ -265,11 +269,13 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
     <AuthenticatedLayout>
         
-        <div class="mb-4 flex justify-between items-center max-w-7xl mx-auto px-4 sm:px-6">
+        <div class="mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 max-w-7xl mx-auto px-4 sm:px-6">
              <div class="flex items-center gap-3 flex-wrap">
                  <div>
                     <div class="flex items-center gap-2">
-                        <h1 class="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-tight">{{ course.title }}</h1>
+                        <h1 class="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-tight">
+                            {{ course.title }} <span v-if="currentUser.role === 'dean'" class="text-sm text-slate-400 font-medium">(Read-Only Audit)</span>
+                        </h1>
                         <span v-if="currentUser.role === 'admin'" class="bg-red-600 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded animate-pulse shadow-sm">
                             Admin Override
                         </span>
@@ -281,27 +287,36 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                  </div>
              </div>
              
-             <div class="flex items-center gap-2">
-                 <button @click="togglePublish" 
-                         class="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded transition shadow-sm border flex items-center gap-1.5"
-                         :class="course.is_published ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-700'">
-                     <span v-if="course.is_published" class="flex items-center gap-1.5">
-                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span> LIVE
-                     </span>
-                     <span v-else class="flex items-center gap-1.5">
-                         <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> DRAFT
-                     </span>
-                 </button>
-
-                 <Link :href="route('teacher.courses.edit', { course: course.id, source: 'manage' })" class="text-[10px] font-black uppercase tracking-widest text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 px-3 py-1.5 rounded transition shadow-sm border border-blue-100 dark:border-blue-800">
-                     Settings
+             <!-- ACTION BUTTONS -->
+             <div class="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-hide shrink-0">
+                 
+                 <Link :href="backUrl" class="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 px-3 py-1.5 rounded transition shadow-sm border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 shrink-0">
+                     <ChevronLeft class="w-3.5 h-3.5" /> EXIT COURSE
                  </Link>
+
+                 <template v-if="currentUser.role !== 'dean'">
+                     <button @click="togglePublish" 
+                             class="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded transition shadow-sm border flex items-center gap-1.5 shrink-0"
+                             :class="course.is_published ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:border-slate-700'">
+                         <span v-if="course.is_published" class="flex items-center gap-1.5">
+                             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_rgba(16,185,129,0.8)]"></span> LIVE
+                         </span>
+                         <span v-else class="flex items-center gap-1.5">
+                             <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> DRAFT
+                         </span>
+                     </button>
+    
+                     <Link :href="route('teacher.courses.edit', { course: course.id, source: 'manage' })" class="text-[10px] font-black uppercase tracking-widest text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 px-3 py-1.5 rounded transition shadow-sm border border-blue-100 dark:border-blue-800 shrink-0">
+                         Settings
+                     </Link>
+                 </template>
              </div>
         </div>
 
         <div class="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row gap-4 md:gap-6 items-start pb-[300px] md:pb-6">
             
-            <aside class="fixed bottom-[156px] right-4 z-[45] flex flex-col gap-3 md:relative md:bottom-auto md:right-auto md:z-10 md:w-12 md:sticky md:top-6 order-2 md:order-1 transition-all duration-300">
+            <!-- DEAN HIDE: Floating Action Buttons -->
+            <aside v-if="currentUser.role !== 'dean'" class="fixed bottom-[156px] right-4 z-[45] flex flex-col gap-3 md:relative md:bottom-auto md:right-auto md:z-10 md:w-12 md:sticky md:top-6 order-2 md:order-1 transition-all duration-300">
                 
                 <button @click="showAnnouncementModal = true" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-red-600 hover:text-white hover:bg-red-600 hover:border-red-600 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:shadow-xl focus:outline-none shrink-0 md:shadow-sm md:hover:shadow-md">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
@@ -370,7 +385,8 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                         <tr>
                                             <th class="px-2 py-2">Student Name</th>
                                             <th class="px-2 py-2 text-center">Rank</th>
-                                            <th class="px-2 py-2 text-right">Action</th>
+                                            <!-- DEAN HIDE: Action Column -->
+                                            <th v-if="currentUser.role !== 'dean'" class="px-2 py-2 text-right">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
@@ -383,7 +399,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                                 </div>
                                             </td>
                                             <td class="px-2 py-1.5 text-center align-middle font-black" :class="enrollment.rank <= 3 ? 'text-yellow-600' : 'text-slate-500'">#{{ enrollment.rank }}</td>
-                                            <td class="px-2 py-1.5 text-right align-middle">
+                                            
+                                            <!-- DEAN HIDE: Remove Button -->
+                                            <td v-if="currentUser.role !== 'dean'" class="px-2 py-1.5 text-right align-middle">
                                                 <button @click="removeStudent(enrollment.user_id)" class="text-red-500 hover:text-red-700 text-[9px] font-bold bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded border border-red-100 dark:border-red-900/30 transition shadow-sm">Remove</button>
                                             </td>
                                         </tr>
@@ -427,7 +445,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                         <p class="text-[9px] text-slate-500 truncate">{{ enrollment.user.email }}</p>
                                     </div>
                                 </div>
-                                <div class="flex gap-1.5 shrink-0">
+                                
+                                <!-- DEAN HIDE: Accept/Reject Requests -->
+                                <div v-if="currentUser.role !== 'dean'" class="flex gap-1.5 shrink-0">
                                     <button @click="removeStudent(enrollment.user_id)" class="text-[9px] font-black uppercase tracking-widest text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 border border-red-100 dark:border-red-800/30 px-3 py-1.5 rounded shadow-sm transition">Reject</button>
                                     <button @click="approveStudent(enrollment.user_id)" class="text-[9px] font-black uppercase tracking-widest text-white bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded shadow-sm transition">Accept</button>
                                 </div>
@@ -450,7 +470,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <p class="text-[9px] text-slate-500 mt-0.5">{{ new Date(post.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) }}</p>
                                 </div>
                             </div>
-                            <button @click="deleteItem(route('teacher.announcements.destroy', post.id))" class="text-slate-400 hover:text-red-500 bg-white hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-900/20 p-1.5 rounded transition shadow-sm border border-slate-100 dark:border-slate-700" title="Delete post">
+                            
+                            <!-- DEAN HIDE: Delete Announcement Button -->
+                            <button v-if="currentUser.role !== 'dean'" @click="deleteItem(route('teacher.announcements.destroy', post.id))" class="text-slate-400 hover:text-red-500 bg-white hover:bg-red-50 dark:bg-slate-800 dark:hover:bg-red-900/20 p-1.5 rounded transition shadow-sm border border-slate-100 dark:border-slate-700" title="Delete post">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                             </button>
                         </div>
@@ -501,7 +523,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <div class="bg-white dark:bg-slate-800 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 flex-1 relative shadow-sm leading-tight">
                                         <div class="flex justify-between items-start mb-0.5">
                                             <span class="font-bold text-slate-900 dark:text-white text-[9px]">{{ comment.user?.name || 'Deleted User' }}</span>
-                                            <button @click="deleteItem(route('comments.destroy', comment.id))" class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5">
+                                            
+                                            <!-- DEAN HIDE: Delete Comment Button -->
+                                            <button v-if="currentUser.role !== 'dean'" @click="deleteItem(route('comments.destroy', comment.id))" class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5">
                                                 <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                             </button>
                                         </div>
@@ -509,7 +533,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     </div>
                                 </div>
                             </div>
-                            <div class="flex gap-1.5 items-center">
+                            
+                            <!-- DEAN HIDE: Add Comment Box -->
+                            <div v-if="currentUser.role !== 'dean'" class="flex gap-1.5 items-center">
                                 <div class="w-5 h-5 shrink-0 rounded bg-red-600 flex items-center justify-center text-white text-[8px] font-bold">{{ currentUser.name.charAt(0) }}</div>
                                 <div class="flex-1 relative">
                                     <input v-model="formComment.content" @keyup.enter="submitComment(post.id)" type="text" placeholder="Write a reply..." class="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded py-1 px-2 text-[10px] focus:ring-1 focus:ring-red-500 h-7 pr-7 shadow-sm transition" />
@@ -521,7 +547,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         </div>
                     </div>
                     <div v-if="course.announcements.length === 0" class="text-center py-8 bg-slate-50 dark:bg-slate-900/30 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                        <p class="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-widest">No announcements yet. Click the red icon to post.</p>
+                        <p class="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-widest">No announcements yet.</p>
                     </div>
                 </div>
 
@@ -551,7 +577,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 <div class="flex flex-wrap items-center gap-2 mt-1">
                                     <span class="text-[8px] font-black text-slate-500 uppercase bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">{{ assignment.type.replace('_', ' ') }}</span>
                                     
-                                    <!-- THE NEW TURN-IN BADGE -->
                                     <span class="text-[8px] font-black whitespace-nowrap bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-1.5 py-0.5 rounded shadow-sm border border-indigo-200 dark:border-indigo-800">
                                         {{ assignment.submissions_count || 0 }} / {{ course.enrollments_count || 0 }} Submitted
                                     </span>
@@ -563,7 +588,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         </Link>
                     </div>
                     <div v-else class="text-center py-8 bg-slate-50 dark:bg-slate-900/30 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
-                        <p class="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-widest">No {{ assignmentFilter.replace('_', ' ') }} assignments.</p>
+                        <p class="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-widest">No {{ assignmentFilter.replace('_', ' ') }} tasks.</p>
                     </div>
                 </div>
 
@@ -597,7 +622,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <div class="flex items-center flex-wrap gap-2 mb-1">
                                         <span class="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-white truncate max-w-[200px]">{{ lesson.title }}</span>
                                         
-                                        <!-- ADDED: Semester Badge -->
                                         <span v-if="lesson.semester" class="text-[8px] bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">{{ lesson.semester }} Sem</span>
 
                                         <span v-if="materialFilter === 'archived'" class="text-[8px] bg-slate-100 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded uppercase font-black tracking-widest shrink-0">Archived</span>
@@ -632,17 +656,20 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <Download class="w-3.5 h-3.5" />
                                 </a>                             
 
-                                <button v-if="lesson.approval_status === 'rejected'" @click="openResubmitModal(lesson)" class="text-[9px] font-black uppercase tracking-widest bg-blue-600 text-white border border-blue-600 px-3 py-1.5 rounded hover:bg-blue-500 transition shadow-sm">
-                                    Resubmit
-                                </button>
-                                
-                                <button v-if="materialFilter === 'archived'" @click="openUnarchiveModal(lesson)" class="text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded hover:bg-emerald-200 transition shadow-sm">
-                                    Req Unarchive
-                                </button>
-                                
-                                <button @click="deleteItem(route('teacher.lessons.destroy', lesson.id), true)" class="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition border border-transparent hover:border-red-200 dark:hover:border-red-800" title="Delete Permanently">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
+                                <!-- DEAN HIDE: Material Edit Actions -->
+                                <template v-if="currentUser.role !== 'dean'">
+                                    <button v-if="lesson.approval_status === 'rejected'" @click="openResubmitModal(lesson)" class="text-[9px] font-black uppercase tracking-widest bg-blue-600 text-white border border-blue-600 px-3 py-1.5 rounded hover:bg-blue-500 transition shadow-sm">
+                                        Resubmit
+                                    </button>
+                                    
+                                    <button v-if="materialFilter === 'archived'" @click="openUnarchiveModal(lesson)" class="text-[9px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded hover:bg-emerald-200 transition shadow-sm">
+                                        Req Unarchive
+                                    </button>
+                                    
+                                    <button @click="deleteItem(route('teacher.lessons.destroy', lesson.id), true)" class="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition border border-transparent hover:border-red-200 dark:hover:border-red-800" title="Delete Permanently">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    </button>
+                                </template>
                             </div>
 
                         </div>
@@ -655,6 +682,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
             </div>
         </div>
 
+        <!-- MODALS REMAIN THE SAME -->
         <Modal :show="showUnarchiveModal" @close="showUnarchiveModal = false" maxWidth="sm">
             <div class="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-lg">
                 <h3 class="font-black text-sm text-slate-900 dark:text-white uppercase tracking-tight mb-4 flex items-center gap-2">
@@ -700,7 +728,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <InputError class="mt-1 text-[9px]" :message="formLesson.errors.title" />
                     </div>
 
-                    <!-- ADDED: Semester Dropdown for Material -->
                     <div>
                         <InputLabel value="Semester *" class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1" />
                         <select v-model="formLesson.semester" :class="inputClass" required>
