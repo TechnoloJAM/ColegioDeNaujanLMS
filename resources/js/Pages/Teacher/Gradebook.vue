@@ -1,6 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { Download, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock } from 'lucide-vue-next';
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
@@ -14,9 +14,22 @@ const props = defineProps({
     all_export_data: Array
 });
 
+// ==========================================
+// NEW: Hidden Courses Sync Logic
+// ==========================================
+const page = usePage();
+const userId = page.props.auth.user.id;
+const storageKey = `lms_hidden_courses_${userId}`;
+const hiddenCourses = ref(JSON.parse(localStorage.getItem(storageKey)) || []);
+
+// Filter out courses that the teacher has hidden globally
+const visibleCourses = computed(() => {
+    return props.courses ? props.courses.filter(c => !hiddenCourses.value.includes(c.id)) : [];
+});
+// ==========================================
+
 const expandedStudentId = ref(null);
 const sortOrder = ref('alpha_asc');
-
 const isEditMode = ref(false);
 const isSaving = ref(false);
 const pendingGrades = ref({});
@@ -73,7 +86,6 @@ const updatePendingGrade = (studentId, assignmentId, maxPoints, courseId, event)
     };
 };
 
-// FIX: Now accepts the full student object directly to avoid searching arrays
 const getInputValue = (student, assignmentId) => {
     const studentId = typeof student === 'object' ? student.id : student;
     const key = `${studentId}_${assignmentId}`;
@@ -82,12 +94,10 @@ const getInputValue = (student, assignmentId) => {
         return pendingGrades.value[key].grade;
     }
     
-    // If student object is directly provided, bypass searching
     if (typeof student === 'object') {
         return getSubmission(student, assignmentId)?.grade ?? '';
     }
     
-    // Fallback for single course view just in case
     const foundStudent = props.students?.find(s => s.id === studentId);
     if (!foundStudent) return '';
     
@@ -197,18 +207,22 @@ const processedStudents = computed(() => {
     return list;
 });
 
+// UPDATED: Filter Export Data to exclude hidden courses
 const processedAllExportData = computed(() => {
     if (!props.all_export_data) return [];
-    return props.all_export_data.map(c => {
-        let sortedStudents = [...c.students].sort((a, b) => {
-            if (sortOrder.value === 'alpha_asc') return a.name.localeCompare(b.name);
-            if (sortOrder.value === 'alpha_desc') return b.name.localeCompare(a.name);
-            if (sortOrder.value === 'avg_desc') return b.percentage - a.percentage;
-            if (sortOrder.value === 'avg_asc') return a.percentage - b.percentage;
-            return 0;
+    
+    return props.all_export_data
+        .filter(c => !hiddenCourses.value.includes(c.id)) // HIDE IN MEGA VIEW
+        .map(c => {
+            let sortedStudents = [...c.students].sort((a, b) => {
+                if (sortOrder.value === 'alpha_asc') return a.name.localeCompare(b.name);
+                if (sortOrder.value === 'alpha_desc') return b.name.localeCompare(a.name);
+                if (sortOrder.value === 'avg_desc') return b.percentage - a.percentage;
+                if (sortOrder.value === 'avg_asc') return a.percentage - b.percentage;
+                return 0;
+            });
+            return { ...c, students: sortedStudents };
         });
-        return { ...c, students: sortedStudents };
-    });
 });
 
 const switchCourse = (e) => {
@@ -262,7 +276,6 @@ const buildExcelSheet = (title, assignments, students) => {
             const row = [student.name];
 
             assignments.forEach(task => {
-                // FIX: Always uses getInputValue so unsaved edits export correctly regardless of mode
                 const val = getInputValue(student, task.id);
                 const pts = (val !== '' && val !== null && !isNaN(val)) ? parseFloat(val) : 0;
                 
@@ -299,12 +312,13 @@ const downloadExcel = () => {
     const wb = XLSX.utils.book_new();
 
     if (props.course && props.course.id === 'all') {
-        if (!props.all_export_data || props.all_export_data.length === 0) {
-            alert("No data available to export.");
+        const exportData = processedAllExportData.value;
+        if (!exportData || exportData.length === 0) {
+            alert("No data available to export. (Make sure you haven't hidden all your classes!)");
             return;
         }
 
-        props.all_export_data.forEach(courseData => {
+        exportData.forEach(courseData => {
             const ws = buildExcelSheet(courseData.title, courseData.assignments || [], courseData.students || []);
             let safeSheetName = courseData.title.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
             XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
@@ -313,7 +327,6 @@ const downloadExcel = () => {
         XLSX.writeFile(wb, `Complete_Teacher_Gradebook.xlsx`);
     } else {
         if (!props.course || !props.assignments || !props.students) return;
-
         const ws = buildExcelSheet(props.course.title, props.assignments, processedStudents.value);
         let safeSheetName = props.course.title.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
         XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
@@ -333,9 +346,10 @@ const downloadExcel = () => {
                 <div class="w-full md:w-auto">
                     <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5 sm:gap-2 leading-tight">
                         Gradebook
+                        <!-- UPDATED: Uses visibleCourses -->
                         <select @change="switchCourse" class="text-[10px] sm:text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded py-1 pl-2 pr-6 focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm transition max-w-[180px] sm:max-w-none truncate">
                             <option value="all" :selected="course.id === 'all'">All Courses</option>
-                            <option v-for="c in courses" :key="c.id" :value="c.id" :selected="c.id === course.id">{{ c.title }}</option>
+                            <option v-for="c in visibleCourses" :key="c.id" :value="c.id" :selected="c.id === course.id">{{ c.title }}</option>
                         </select>
                     </h1>
                 </div>
@@ -375,6 +389,10 @@ const downloadExcel = () => {
 
             <!-- VIEW: ALL COURSES SELECTED (MEGA VIEW) -->
             <div v-if="course && course.id === 'all'" class="space-y-4 sm:space-y-6 mt-3 sm:mt-4">
+                <div v-if="processedAllExportData.length === 0" class="text-center py-16 text-slate-500 font-bold uppercase tracking-widest text-xs">
+                    You have hidden all your active classes. Unhide them to view their gradebooks.
+                </div>
+                
                 <div v-for="c in processedAllExportData" :key="c.id" class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                     
                     <!-- Mega View Class Header -->
@@ -424,12 +442,11 @@ const downloadExcel = () => {
                                         </div>
                                         <span class="truncate">{{ student.name }}</span>
                                     </td>
-
                                     <td v-for="a in c.assignments" :key="a.id" class="px-1 py-1 border-r border-slate-100 dark:border-slate-800 relative" :class="!isEditMode ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''">
                                         <template v-if="getSubmission(student, a.id)">
                                             <div class="flex items-center justify-center gap-1">
-                                                <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission" 
-                                                   class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition ml-0.5">
+                                                <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission"
+                                                    class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition ml-0.5">
                                                     <FileText class="w-3 h-3 shrink-0" />
                                                 </a>
                                                 <div class="flex-1 px-0.5">
@@ -460,7 +477,6 @@ const downloadExcel = () => {
                                             </div>
                                         </template>
                                     </td>
-
                                     <td class="px-1.5 py-1 text-center border-r border-slate-200 dark:border-slate-700 bg-blue-50/10 dark:bg-blue-900/5">
                                         <div class="font-black text-blue-600 dark:text-blue-400 text-[10px]">{{ student.assignment_score > 0 ? ((student.assignment_score / c.max_assignment) * 100).toFixed(1) : 0 }}%</div>
                                         <div class="font-bold text-slate-500 dark:text-slate-400 text-[7px] mt-0.5">{{ student.assignment_score }} Raw</div>
@@ -489,7 +505,7 @@ const downloadExcel = () => {
 
                     <!-- MOBILE MEGA VIEW ACCORDION -->
                     <div class="md:hidden flex flex-col gap-1 p-1 bg-slate-50/50 dark:bg-slate-900/30">
-                        <div v-if="isEditMode" class="p-1 text-center text-[9px] font-black uppercase tracking-widest rounded border shadow-sm mb-0.5 transition-colors"
+                        <div v-if="isEditMode" class="p-1 text-center text-[9px] font-black uppercase tracking-widest rounded border shadow-sm mb-0.5 transition-colors" 
                              :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
                             <span v-if="hasErrors">Error: Exceeds max score</span>
                             <span v-else>Edit Mode Active</span>
@@ -504,8 +520,8 @@ const downloadExcel = () => {
                                     <span class="block text-[10px] font-black text-slate-900 dark:text-white truncate">{{ student.name }}</span>
                                 </div>
                                 <div class="flex items-center gap-1.5 shrink-0">
-                                    <span class="text-[8px] font-black uppercase tracking-widest px-1 py-0.5 rounded border shrink-0" 
-                                        :class="student.percentage >= 75 ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800' : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800'">
+                                    <span class="text-[8px] font-black uppercase tracking-widest px-1 py-0.5 rounded border shrink-0"
+                                         :class="student.percentage >= 75 ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800' : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800'">
                                         {{ student.percentage }}%
                                     </span>
                                     <component :is="expandedStudentId === (student.id + '-' + c.id) ? ChevronUp : ChevronDown" class="w-3 h-3 text-slate-400" />
@@ -521,21 +537,21 @@ const downloadExcel = () => {
                                              <span class="text-[7px] font-black text-blue-500 uppercase tracking-widest shrink-0">Max {{ a.points }}</span>
                                          </div>
                                      </div>
-                                     
+                                      
                                      <div class="flex items-center gap-1 w-auto shrink-0">
                                          <template v-if="getSubmission(student, a.id)">
-                                             <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission" 
-                                                class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition bg-slate-50 dark:bg-slate-900 p-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
+                                             <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission"
+                                                 class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition bg-slate-50 dark:bg-slate-900 p-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
                                                  <FileText class="w-3 h-3" />
                                              </a>
-                                             
+                                              
                                              <div class="w-12 shrink-0">
                                                  <input 
-                                                     v-if="isEditMode"
+                                                      v-if="isEditMode"
                                                      type="number" 
-                                                     step="0.01" 
-                                                     min="0" 
-                                                     :max="a.points"
+                                                      step="0.01" 
+                                                      min="0" 
+                                                      :max="a.points"
                                                      :value="getInputValue(student, a.id)"
                                                      @input="updatePendingGrade(student.id, a.id, a.points, c.id, $event)"
                                                      class="w-full h-5 text-center border focus:ring-1 focus:ring-inset rounded text-[9px] font-black transition-colors py-0 px-1 shadow-inner"
@@ -587,7 +603,7 @@ const downloadExcel = () => {
                 <!-- DESKTOP SINGLE COURSE TABLE -->
                 <div class="hidden md:block bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-x-auto custom-scrollbar relative">
                     
-                    <div v-if="isEditMode" class="p-1.5 text-center text-[10px] font-black uppercase tracking-widest border-b transition-colors"
+                    <div v-if="isEditMode" class="p-1.5 text-center text-[10px] font-black uppercase tracking-widest border-b transition-colors" 
                          :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
                         <span v-if="hasErrors">Cannot Save: A grade exceeds the maximum score!</span>
                         <span v-else>Edit Mode Active: Click "Save Changes" when finished.</span>
@@ -599,6 +615,7 @@ const downloadExcel = () => {
                                 <th class="px-2 py-1.5 sticky left-0 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-10 w-32 sm:w-48 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                                     Student Name
                                 </th>
+
                                 <!-- COMPACT INDIVIDUAL ASSIGNMENTS -->
                                 <th v-for="a in assignments" :key="a.id" class="px-1.5 py-1.5 min-w-[70px] max-w-[100px] border-r border-slate-200 dark:border-slate-700 text-center bg-white dark:bg-slate-800">
                                     <span class="block truncate text-[9px] text-slate-700 dark:text-slate-300" :title="a.title">{{ a.title }}</span>
@@ -637,17 +654,17 @@ const downloadExcel = () => {
                                 <td v-for="a in assignments" :key="a.id" class="px-1 py-1 border-r border-slate-100 dark:border-slate-800 relative" :class="!isEditMode ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''">
                                     <template v-if="getSubmission(student, a.id)">
                                         <div class="flex items-center justify-center gap-1">
-                                            <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission" 
-                                               class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition ml-0.5">
+                                            <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission"
+                                                class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition ml-0.5">
                                                 <FileText class="w-3 h-3 shrink-0" />
                                             </a>
                                             <div class="flex-1 px-0.5">
                                                 <template v-if="isEditMode">
                                                     <input 
-                                                        type="number" 
-                                                        step="0.01" 
-                                                        min="0" 
-                                                        :max="a.points"
+                                                         type="number" 
+                                                         step="0.01" 
+                                                         min="0" 
+                                                         :max="a.points"
                                                         :value="getInputValue(student, a.id)"
                                                         @input="updatePendingGrade(student.id, a.id, a.points, course.id, $event)"
                                                         class="w-full text-center border-0 bg-transparent focus:ring-1 focus:ring-inset rounded text-[10px] font-bold transition-colors py-0.5 px-0 h-5"
@@ -689,8 +706,8 @@ const downloadExcel = () => {
                                 </td>
                                 
                                 <td class="px-2 py-1 text-center border-l border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-900/20">
-                                    <span class="text-[10px] font-black block" 
-                                        :class="{
+                                    <span class="text-[10px] font-black block"
+                                         :class="{
                                             'text-emerald-600 dark:text-emerald-400': student.numericAverage >= 85,
                                             'text-yellow-600 dark:text-yellow-400': student.numericAverage >= 75 && student.numericAverage < 85,
                                             'text-red-600 dark:text-red-400': student.numericAverage < 75
@@ -708,7 +725,7 @@ const downloadExcel = () => {
                 <!-- MOBILE SINGLE COURSE VIEW (Ultra Compact Accordion) -->
                 <div class="md:hidden flex flex-col gap-1.5">
                     
-                    <div v-if="isEditMode" class="p-1.5 text-center text-[9px] font-black uppercase tracking-widest rounded border shadow-sm mb-1 transition-colors"
+                    <div v-if="isEditMode" class="p-1.5 text-center text-[9px] font-black uppercase tracking-widest rounded border shadow-sm mb-1 transition-colors" 
                          :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
                         <span v-if="hasErrors">Error: Exceeds max score</span>
                         <span v-else>Edit Mode Active</span>
@@ -725,8 +742,8 @@ const downloadExcel = () => {
                                 </div>
                             </div>
                             <div class="flex items-center gap-1.5 shrink-0">
-                                <span class="text-[8px] font-black uppercase tracking-widest px-1 py-0.5 rounded border shrink-0" 
-                                    :class="{
+                                <span class="text-[8px] font-black uppercase tracking-widest px-1 py-0.5 rounded border shrink-0"
+                                     :class="{
                                         'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-800': student.numericAverage >= 85,
                                         'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-800': student.numericAverage >= 75 && student.numericAverage < 85,
                                         'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800': student.numericAverage < 75
@@ -736,7 +753,7 @@ const downloadExcel = () => {
                                 <component :is="expandedStudentId === student.id ? ChevronUp : ChevronDown" class="w-3 h-3 text-slate-400" />
                             </div>
                         </button>
-
+                        
                         <div v-show="expandedStudentId === student.id" class="p-1.5 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                             
                             <div v-for="a in assignments" :key="a.id" class="flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded border border-slate-100 dark:border-slate-700 shadow-sm">
@@ -747,21 +764,21 @@ const downloadExcel = () => {
                                         <span class="text-[7px] font-black text-blue-500 uppercase tracking-widest shrink-0">Max {{ a.points }}</span>
                                     </div>
                                 </div>
-                                
+                                 
                                 <div class="flex items-center gap-1 w-auto shrink-0">
                                     <template v-if="getSubmission(student, a.id)">
-                                        <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission" 
-                                           class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition bg-white dark:bg-slate-800 p-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
+                                        <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission"
+                                            class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition bg-white dark:bg-slate-800 p-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
                                             <FileText class="w-3 h-3" />
                                         </a>
-                                        
+                                         
                                         <div class="w-12 shrink-0">
                                             <input 
-                                                v-if="isEditMode"
+                                                 v-if="isEditMode"
                                                 type="number" 
-                                                step="0.01" 
-                                                min="0" 
-                                                :max="a.points"
+                                                 step="0.01" 
+                                                 min="0" 
+                                                 :max="a.points"
                                                 :value="getInputValue(student, a.id)"
                                                 @input="updatePendingGrade(student.id, a.id, a.points, course.id, $event)"
                                                 class="w-full h-5 text-center border focus:ring-1 focus:ring-inset rounded text-[9px] font-black transition-colors py-0 px-1 shadow-inner"
@@ -773,7 +790,6 @@ const downloadExcel = () => {
                                             </div>
                                         </div>
                                     </template>
-
                                     <template v-else>
                                         <div v-if="isLateEnrollee(student, a)" class="h-5 px-1.5 flex items-center justify-center gap-0.5 rounded bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 text-[7px] font-black uppercase tracking-widest cursor-not-allowed border border-slate-200 dark:border-slate-700">
                                             <Clock class="w-2 h-2" /> Late
@@ -805,9 +821,8 @@ const downloadExcel = () => {
                         </div>
                     </div>
                 </div>
-
             </div>
-            
+
             <!-- FALLBACK IF NO DATA IS AVAILABLE -->
             <div v-else-if="course && (!course.id || course.id !== 'all')" class="mt-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-8 text-center flex flex-col items-center justify-center">
                 <h3 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">No Data Available</h3>
@@ -823,7 +838,6 @@ const downloadExcel = () => {
 .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
 input[type="number"]::-webkit-inner-spin-button, 
 input[type="number"]::-webkit-outer-spin-button { 
     -webkit-appearance: none; 
