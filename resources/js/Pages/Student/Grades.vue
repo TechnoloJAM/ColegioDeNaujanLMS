@@ -82,7 +82,7 @@ const processedCourses = computed(() => {
             <div class="mb-3 sm:mb-4 border-b border-slate-100 dark:border-slate-800 pb-2.5">
                 <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white leading-tight">My Official Grades</h1>
                 <p class="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">
-                    Your academic performance across all active classes.
+                    Your academic performance across all classes.
                 </p>
             </div>
 
@@ -92,15 +92,15 @@ const processedCourses = computed(() => {
                 <div class="flex flex-col sm:flex-row gap-2 mb-3 sm:mb-4 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
                     
                     <!-- Search -->
-                    <div class="relative flex-1">
+                    <div class="relative flex-1 min-w-0">
                         <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                         <input v-model="searchQuery" type="text" placeholder="Search class or instructor..." 
                                class="w-full h-8 pl-8 pr-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-[10px] font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 focus:border-transparent transition shadow-inner" />
                     </div>
                     
-                    <!-- Filters Grid (Wraps perfectly on mobile) -->
+                    <!-- Filters Grid -->
                     <div class="grid grid-cols-2 sm:flex gap-2 shrink-0">
-                        <div class="relative">
+                        <div class="relative min-w-0">
                             <BookOpen class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
                             <select v-model="selectedCourseFilter" class="w-full h-8 pl-6 pr-6 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 focus:ring-1 focus:ring-blue-500 focus:border-transparent shadow-sm cursor-pointer transition truncate">
                                 <option value="all">All Classes</option>
@@ -108,7 +108,7 @@ const processedCourses = computed(() => {
                             </select>
                         </div>
                         
-                        <div class="relative">
+                        <div class="relative min-w-0">
                             <User class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
                             <select v-model="selectedInstructorFilter" class="w-full h-8 pl-6 pr-6 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 focus:ring-1 focus:ring-blue-500 focus:border-transparent shadow-sm cursor-pointer transition truncate">
                                 <option value="all">All Instructors</option>
@@ -116,7 +116,7 @@ const processedCourses = computed(() => {
                             </select>
                         </div>
 
-                        <div class="relative col-span-2 sm:col-span-1">
+                        <div class="relative col-span-2 sm:col-span-1 min-w-0">
                             <Filter class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
                             <select v-model="sortOrder" class="w-full h-8 pl-6 pr-6 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 focus:ring-1 focus:ring-blue-500 focus:border-transparent shadow-sm cursor-pointer transition truncate">
                                 <option value="grade_desc">Highest Grade</option>
@@ -134,7 +134,7 @@ const processedCourses = computed(() => {
                         
                         <!-- Accordion Header -->
                         <button @click="toggleCourse(course.id)" class="w-full flex items-center justify-between p-2.5 sm:p-3 bg-slate-50/50 dark:bg-slate-900/30 transition-colors focus:outline-none">
-                            <div class="flex flex-col items-start min-w-0 pr-3 text-left">
+                            <div class="flex flex-col items-start min-w-0 pr-3 text-left w-full">
                                 <h3 class="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate w-full">{{ course.title }}</h3>
                                 <span class="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5 truncate w-full">Instructor: {{ course.teacher }}</span>
                             </div>
@@ -154,7 +154,6 @@ const processedCourses = computed(() => {
                         <!-- Accordion Body (Details) -->
                         <div v-show="expandedCourseId === course.id" class="p-2 sm:p-3 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
                             
-                            <!-- Ultra-Compact Category Summaries -->
                             <div class="grid grid-cols-3 gap-1.5 mb-3">
                                 <div class="text-center bg-blue-50/50 dark:bg-blue-900/10 p-1.5 rounded border border-blue-100 dark:border-blue-800/30">
                                     <span class="block text-[7px] font-black uppercase tracking-widest text-blue-500">Assign</span>
@@ -173,22 +172,21 @@ const processedCourses = computed(() => {
                                 </div>
                             </div>
 
-                            <!-- Individual Tasks List -->
                             <h4 class="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1.5 px-1">Task Breakdown</h4>
                             <div class="space-y-1">
                                 <Link v-for="task in course.assignments" :key="task.id" 
                                       :href="route('student.courses.show', { course: course.id, tab: 'assignments', target: task.id })"
                                       class="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-2 rounded border border-slate-100 dark:border-slate-700/50 hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm gap-1.5 transition-all group">
                                     
-                                    <div class="flex flex-col min-w-0 flex-1">
-                                        <div class="flex items-center gap-1.5">
+                                    <div class="flex flex-col min-w-0 flex-1 w-full">
+                                        <div class="flex items-center gap-1.5 min-w-0">
                                             <span class="text-[6px] font-black uppercase tracking-widest bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 px-1 py-0.5 rounded text-slate-500 shrink-0">{{ task.type }}</span>
-                                            <span class="text-[9px] sm:text-[10px] font-bold text-slate-800 dark:text-slate-200 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{{ task.title }}</span>
+                                            <span class="text-[9px] sm:text-[10px] font-bold text-slate-800 dark:text-slate-200 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors w-full">{{ task.title }}</span>
                                         </div>
-                                        <span v-if="task.feedback" class="text-[8px] italic text-emerald-600 dark:text-emerald-400 mt-0.5 pl-0.5 line-clamp-1">"{{ task.feedback }}"</span>
+                                        <span v-if="task.feedback" class="text-[8px] italic text-emerald-600 dark:text-emerald-400 mt-0.5 pl-0.5 line-clamp-1 w-full truncate">"{{ task.feedback }}"</span>
                                     </div>
                                     
-                                    <div class="flex items-center justify-between sm:justify-end shrink-0 pl-1 border-t sm:border-none border-dashed border-slate-200 dark:border-slate-700 pt-1.5 sm:pt-0">
+                                    <div class="flex items-center justify-between sm:justify-end shrink-0 pl-1 border-t sm:border-none border-dashed border-slate-200 dark:border-slate-700 pt-1.5 sm:pt-0 w-full sm:w-auto">
                                         <div v-if="task.grade !== null" class="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-800/30">
                                             <span class="text-[9px] sm:text-[10px] font-black">{{ task.grade }}</span>
                                             <span class="text-[7px] font-bold uppercase tracking-widest">/ {{ task.points }}</span>

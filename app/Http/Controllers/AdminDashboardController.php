@@ -10,7 +10,7 @@ use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Lesson;
 use App\Models\Submission;
-use App\Models\Recommendation; 
+use App\Models\Recommendation;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\Setting;
@@ -25,16 +25,13 @@ class AdminDashboardController extends Controller
         $fourteenDaysAgo = now()->subDays(14);
         $startOfMonth = now()->startOfMonth();
 
-        // 1. ACTIVE LEARNERS: Unique students who submitted work in the last 7 days
         $activeLearners = Submission::where('created_at', '>=', now()->subDays(7))
             ->distinct('user_id')
             ->count('user_id');
 
-        // 2. REGISTERED USERS (Corrected Math for accurate top cards)
         $activeMembers = User::where('status', 'active')
             ->whereNotNull('email_verified_at')
             ->where(function($q) {
-                // Admins don't need a school ID, everyone else does to be 'active'
                 $q->whereNotNull('school_id')->orWhere('role', 'admin');
             })->count();
 
@@ -48,11 +45,9 @@ class AdminDashboardController extends Controller
             
         $suspendedUsers = User::where('status', 'suspended')->count();
 
-        // 3. ACADEMIC VELOCITY: System-wide throughput for the current month
         $submissionsProcessed = Submission::where('created_at', '>=', $startOfMonth)->count();
         $aiInterventions = Recommendation::where('created_at', '>=', $startOfMonth)->count();
 
-        // 4. CLASSROOM HEALTH: Measuring stagnant vs active environments
         $totalPublishedCourses = Course::where('is_published', true)->count();
         
         $healthyCourses = Course::where('is_published', true)
@@ -70,7 +65,6 @@ class AdminDashboardController extends Controller
 
         $stagnantCourses = $totalPublishedCourses - $healthyCourses;
 
-        // 5. CRITICAL BOTTLENECKS: Queue Aging > 48 hours
         $staleEnrollmentsCount = Enrollment::where('status', 'pending')
             ->where('created_at', '<', $fortyEightHoursAgo)
             ->count();
@@ -82,11 +76,28 @@ class AdminDashboardController extends Controller
         $criticalBottlenecks = $staleEnrollmentsCount + $staleMaterialsCount;
 
         // ==========================================
+        // NEW: Course Population Data
+        // ==========================================
+        $publishedCourses = Course::where('is_published', true)
+            ->withCount(['enrollments' => function($q) {
+                $q->where('status', 'approved');
+            }])
+            ->orderBy('title')
+            ->get();
+
+        $coursePopulationLabels = [];
+        $coursePopulationData = [];
+
+        foreach($publishedCourses as $course) {
+            $coursePopulationLabels[] = $course->title;
+            $coursePopulationData[] = $course->enrollments_count;
+        }
+
+        // ==========================================
         // ADMINISTRATIVE ACTION CENTER PIPELINE
         // ==========================================
         $actionItems = collect();
 
-        // A. High Severity: Stale Materials
         $staleLessons = Lesson::with('course')
             ->where('approval_status', 'pending')
             ->where('created_at', '<', $fortyEightHoursAgo)
@@ -103,7 +114,6 @@ class AdminDashboardController extends Controller
             ]);
         }
 
-        // B. High Severity: Stale Enrollments
         $staleEnrolls = Enrollment::with('course')
             ->selectRaw('course_id, count(*) as total')
             ->where('status', 'pending')
@@ -122,7 +132,6 @@ class AdminDashboardController extends Controller
             ]);
         }
 
-        // C. Medium Severity: Stagnant Courses
         $stagnantList = Course::where('is_published', true)
             ->whereDoesntHave('lessons', fn($q) => $q->where('created_at', '>=', $fourteenDaysAgo))
             ->whereDoesntHave('assignments', fn($q) => $q->where('created_at', '>=', $fourteenDaysAgo))
@@ -139,7 +148,6 @@ class AdminDashboardController extends Controller
             ]);
         }
 
-        // Bundle Health & Velocity Stats (Variables correctly passed)
         $stats = [
             'activeMembers' => $activeMembers,
             'pendingOnboarding' => $pendingOnboarding,
@@ -183,12 +191,11 @@ class AdminDashboardController extends Controller
             
             $totalData[] = $dailyUsers->count();
             
-            // Chart Math Corrected: Matches the top cards strict filtering
             $activeData[] = $dailyUsers->where('status', 'active')
                                        ->whereNotNull('email_verified_at')
                                        ->filter(fn($u) => $u->role === 'admin' || $u->school_id !== null)
                                        ->count();
-                                       
+                                        
             $suspendedData[] = $dailyUsers->where('status', 'suspended')->count();
             $enrollmentsData[] = $enrollsDaily->get($i, 0);
         }
@@ -210,6 +217,10 @@ class AdminDashboardController extends Controller
                 'suspended' => $suspendedData,
                 'enrollments' => $enrollmentsData,
             ],
+            'coursePopulation' => [
+                'labels' => $coursePopulationLabels,
+                'data' => $coursePopulationData
+            ],
             'currentMonth' => (int) $month,
             'currentYear' => (int) $year,
             'monthName' => $date->format('F Y'),
@@ -222,11 +233,10 @@ class AdminDashboardController extends Controller
         return Inertia::render('Admin/UserManagement', [
             'users' => User::with(['enrolledCourses:id,title', 'department:id,name'])
                 ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at', 'contact_number', 'avatar', 'department_id')
-                ->latest() // FIX: Brings newly created users to Page 1!
+                ->latest()
                 ->paginate(15),
             'courses' => \App\Models\Course::select('id', 'title')->orderBy('title')->get(),
             
-            // FIX: Fetches any active Dean associated with the department for the UI table
             'departments' => Department::with(['users' => function($q) {
                 $q->where('role', 'dean')->where('status', 'active')->select('id', 'name', 'department_id');
             }])->orderBy('name')->get() 
@@ -322,7 +332,7 @@ class AdminDashboardController extends Controller
     {
         $request->validate([
             'role' => 'required|in:admin,dean,teacher,student',
-            'department_id' => 'nullable|exists:departments,id', // NEW: Validates department updates
+            'department_id' => 'nullable|exists:departments,id',
             'password' => 'required|string'
         ]);
 
@@ -333,6 +343,7 @@ class AdminDashboardController extends Controller
         if ($user->id === auth()->id() && $request->role !== 'admin') {
             return back()->withErrors(['password' => 'You cannot demote your own admin account.']);
         }
+
         $user->update([
             'role' => $request->role,
             'department_id' => in_array($request->role, ['dean', 'teacher']) ? $request->department_id : null
@@ -392,7 +403,6 @@ class AdminDashboardController extends Controller
         return redirect()->route('dashboard');
     }
 
-    //department management
     public function storeDepartment(Request $request)
     {
         $request->validate(['name' => 'required|string|max:255|unique:departments,name']);
@@ -436,18 +446,15 @@ class AdminDashboardController extends Controller
             'courses.*.description' => 'nullable|string',
             'courses.*.difficulty_level' => 'required|in:beginner,intermediate,advanced,final',
             'courses.*.days' => 'nullable|array',
-            'courses.*.start_time' => 'nullable', // Removed buggy Laravel time rules
-            'courses.*.end_time' => 'nullable',   // Removed buggy Laravel time rules
+            'courses.*.start_time' => 'nullable', 
+            'courses.*.end_time' => 'nullable',   
             'courses.*.room' => 'nullable|string|max:100',
         ]);
 
         $teacherId = $request->teacher_id;
         $coursesToSave = $request->courses;
 
-        // 1. Conflict Prevention Shield & Time Validation
         foreach ($coursesToSave as $index => $c) {
-            
-            // FIX: Manual time check to prevent 500 Fatal Errors
             if (!empty($c['start_time']) && !empty($c['end_time']) && $c['start_time'] >= $c['end_time']) {
                 return back()->withErrors(["courses.{$index}.end_time" => "End time must be after the start time."]);
             }
@@ -461,7 +468,6 @@ class AdminDashboardController extends Controller
             }
         }
 
-        // 2. Save Everything if no conflicts exist
         foreach ($coursesToSave as $c) {
             Course::create([
                 'teacher_id' => $teacherId,
@@ -489,17 +495,15 @@ class AdminDashboardController extends Controller
             'teacher_id' => 'required|exists:users,id',
             'thumbnail' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
             'days' => 'nullable|array',
-            'start_time' => 'nullable', // Removed buggy Laravel time rules
-            'end_time' => 'nullable',   // Removed buggy Laravel time rules
+            'start_time' => 'nullable', 
+            'end_time' => 'nullable',   
             'room' => 'nullable|string|max:100',
         ]);
 
-        // FIX: Manual time check 
         if (!empty($request->start_time) && !empty($request->end_time) && $request->start_time >= $request->end_time) {
             return back()->withErrors(["end_time" => "End time must be after the start time."]);
         }
 
-        // Conflict Shield (Excluding the current course so it doesn't conflict with itself)
         if (!empty($request->days) && !empty($request->start_time) && !empty($request->end_time)) {
             $conflict = $this->checkScheduleConflict($request->teacher_id, $request->days, $request->start_time, $request->end_time, $request->room, $course->id);
             if ($conflict) {
@@ -535,7 +539,6 @@ class AdminDashboardController extends Controller
                 $q->where('id', '!=', $excludeCourseId);
             })
             ->where(function($q) use ($startTime, $endTime) {
-                // The mathematical formula for Time Overlap
                 $q->where('start_time', '<', $endTime)
                   ->where('end_time', '>', $startTime);
             })
@@ -577,6 +580,27 @@ class AdminDashboardController extends Controller
         }
 
         return back()->with('success', count($request->course_ids) . ' course(s) and their related files permanently deleted.');
+    }
+
+    // NEW: Allow Admin to bulk publish/draft courses
+    public function bulkToggleCourseStatus(Request $request)
+    {
+        $request->validate([
+            'course_ids' => 'required|array',
+            'course_ids.*' => 'exists:courses,id',
+            'action' => 'required|in:publish,draft',
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, auth()->user()->password)) {
+            return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        $isPublished = $request->action === 'publish';
+        Course::whereIn('id', $request->course_ids)->update(['is_published' => $isPublished]);
+
+        $status = $isPublished ? 'published' : 'drafted';
+        return back()->with('success', count($request->course_ids) . " course(s) have been successfully {$status}.");
     }
 
     public function materials()
@@ -655,7 +679,6 @@ class AdminDashboardController extends Controller
                          $type = $sub->assignment ? $sub->assignment->type : null;
                          
                          $studentTotal += $grade;
-
                          if ($type === 'assignment') $assignmentScore += $grade;
                          elseif ($type === 'activity') $activityScore += $grade;
                          elseif ($type === 'performance_task') $ptScore += $grade;
@@ -693,5 +716,20 @@ class AdminDashboardController extends Controller
         return Inertia::render('Admin/GradesOverview', [
             'courses' => $formattedData
         ]);
+    }
+
+    // NEW: Secure Admin Override Entry
+    public function enterCourse(Request $request, Course $course)
+    {
+        $request->validate([
+            'password' => 'required|string'
+        ]);
+
+        if (!Hash::check($request->password, auth()->user()->password)) {
+            return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
+        }
+
+        // Password is correct! Redirect the admin into the classroom
+        return redirect()->route('teacher.courses.show', $course->id);
     }
 }
