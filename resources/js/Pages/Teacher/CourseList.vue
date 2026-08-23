@@ -1,11 +1,11 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
-import InputError from '@/Components/InputError.vue'; 
+import InputError from '@/Components/InputError.vue';
 import Dropdown from '@/Components/Dropdown.vue';
-import { Plus } from 'lucide-vue-next'; // Imported the Plus icon
+import { Plus, Search, Filter } from 'lucide-vue-next'; 
 
 const props = defineProps({
     courses: Array
@@ -19,6 +19,10 @@ const storageKey = `lms_hidden_courses_${userId}`;
 const hiddenCourses = ref(JSON.parse(localStorage.getItem(storageKey)) || []);
 const activeTab = ref('active');
 
+// Search & Sort States
+const searchQuery = ref('');
+const sortOption = ref('newest');
+
 const toggleHide = (courseId) => {
     if (hiddenCourses.value.includes(courseId)) {
         hiddenCourses.value = hiddenCourses.value.filter(id => id !== courseId);
@@ -29,11 +33,33 @@ const toggleHide = (courseId) => {
 };
 
 const displayedCourses = computed(() => {
-    if (activeTab.value === 'active') {
-        return props.courses.filter(c => !hiddenCourses.value.includes(c.id));
-    } else {
-        return props.courses.filter(c => hiddenCourses.value.includes(c.id));
+    let filtered = props.courses.filter(c => {
+        const isHidden = hiddenCourses.value.includes(c.id);
+        return activeTab.value === 'active' ? !isHidden : isHidden;
+    });
+
+    if (searchQuery.value.trim() !== '') {
+        const query = searchQuery.value.toLowerCase();
+        filtered = filtered.filter(c => 
+            c.title.toLowerCase().includes(query) || 
+            (c.enrollment_code && c.enrollment_code.toLowerCase().includes(query))
+        );
     }
+
+    filtered.sort((a, b) => {
+        if (sortOption.value === 'newest') {
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        } else if (sortOption.value === 'oldest') {
+            return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        } else if (sortOption.value === 'a_z') {
+            return a.title.localeCompare(b.title);
+        } else if (sortOption.value === 'z_a') {
+            return b.title.localeCompare(a.title);
+        }
+        return 0;
+    });
+
+    return filtered;
 });
 
 const imageErrors = ref({});
@@ -47,6 +73,7 @@ const form = useForm({
 });
 
 const handleImageError = (id) => { imageErrors.value[id] = true; };
+
 const copyCode = (code) => {
     if (code) {
         navigator.clipboard.writeText(code);
@@ -76,7 +103,6 @@ const formatYearLevel = (level) => {
 
 <template>
     <Head title="My Classes" />
-
     <AuthenticatedLayout>
         <div class="max-w-screen-2xl mx-auto flex flex-col h-full">
             
@@ -96,6 +122,25 @@ const formatYearLevel = (level) => {
 
                 <div class="flex-1 min-w-0 flex flex-col h-full">
                     
+                    <div class="bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm mb-4 flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center mx-1 sm:mx-0">
+                        <div class="relative flex-1 min-w-[200px]">
+                            <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                                <Search class="h-3.5 w-3.5 text-slate-400" />
+                            </div>
+                            <input v-model="searchQuery" type="text" placeholder="Search classes by name or code..." class="w-full h-8 pl-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs shadow-sm transition-colors" />
+                        </div>
+
+                        <div class="shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 w-full sm:w-auto">
+                            <Filter class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <select v-model="sortOption" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                                <option value="a_z">Name (A-Z)</option>
+                                <option value="z_a">Name (Z-A)</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="flex gap-4 border-b border-slate-200 dark:border-slate-700 mb-4 px-1 sm:px-0 overflow-x-auto scrollbar-hide shrink-0">
                         <button @click="activeTab = 'active'" class="pb-2.5 text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all relative whitespace-nowrap" :class="activeTab === 'active' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'">
                             Active Classes
@@ -108,12 +153,11 @@ const formatYearLevel = (level) => {
                     </div>
 
                     <div class="flex-1 min-w-0 pb-6 overflow-y-auto">
-                        <div v-if="displayedCourses.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                        <div v-if="displayedCourses.length > 0" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 px-1 sm:px-0">
                             
-                            <div v-for="course in displayedCourses" :key="course.id" 
-                                 class="group bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700
-                                        transition-all duration-200 flex flex-row sm:flex-col shadow-sm h-[110px] sm:h-[260px]
-                                        hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-md relative">
+                            <!-- CRITICAL RESPONSIVE FIX: Fluid Heights and Widths -->
+                            <div v-for="course in displayedCourses" :key="course.id"
+                                  class="group bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 transition-all duration-200 flex flex-row sm:flex-col shadow-sm h-full min-h-[120px] sm:min-h-[260px] hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-md relative">
                                 
                                 <div class="absolute top-2 right-2 z-40">
                                     <Dropdown align="right" width="48">
@@ -133,10 +177,11 @@ const formatYearLevel = (level) => {
                                     </Dropdown>
                                 </div>
 
-                                <div class="w-[100px] sm:w-full h-full sm:h-32 relative bg-slate-100 dark:bg-slate-900 shrink-0 border-r sm:border-r-0 sm:border-b border-slate-200 dark:border-slate-700 rounded-l-xl sm:rounded-t-xl sm:rounded-bl-none overflow-hidden">
-                                    <img v-if="course.thumbnail && !imageErrors[course.id]" 
-                                         :src="course.thumbnail" 
-                                         @error="handleImageError(course.id)"
+                                <!-- IMAGE CONTAINER FIX -->
+                                <div class="w-[110px] sm:w-full h-auto sm:aspect-video relative bg-slate-100 dark:bg-slate-900 shrink-0 border-r sm:border-r-0 sm:border-b border-slate-200 dark:border-slate-700 rounded-l-xl sm:rounded-t-xl sm:rounded-bl-none overflow-hidden">
+                                    <img v-if="course.thumbnail && !imageErrors[course.id]"
+                                          :src="course.thumbnail"
+                                          @error="handleImageError(course.id)"
                                          class="absolute inset-0 w-full h-full object-cover z-0 transition-transform duration-700 group-hover:scale-105" />
                                     
                                     <div class="absolute inset-0 bg-slate-200 dark:bg-slate-900 flex items-center justify-center" v-else>
@@ -144,7 +189,6 @@ const formatYearLevel = (level) => {
                                     </div>
                                     
                                     <div class="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent hidden sm:block z-10 pointer-events-none"></div>
-
                                     <div class="absolute sm:bottom-2 sm:left-2 top-2 left-2 z-20">
                                         <span class="text-[8px] font-black uppercase tracking-widest bg-white/90 text-blue-600 px-1.5 py-0.5 rounded shadow-sm">
                                             {{ formatYearLevel(course.difficulty_level) }}
@@ -152,14 +196,15 @@ const formatYearLevel = (level) => {
                                     </div>
                                 </div>
 
-                                <div class="p-2 sm:p-3 flex-1 flex flex-col justify-between min-w-0">
+                                <!-- TEXT CONTAINER FIX -->
+                                <div class="p-3 flex-1 flex flex-col justify-between min-w-0">
                                     <div class="min-w-0">
                                         <Link :href="route('teacher.courses.edit', course.id)" class="block font-black text-sm sm:text-base text-slate-900 dark:text-white group-hover:text-blue-600 transition truncate leading-tight mb-1 pr-6 sm:pr-0">
                                             {{ course.title }}
                                         </Link>
 
-                                        <div class="bg-slate-50 dark:bg-slate-900/50 rounded inline-flex px-1.5 py-1 border border-slate-100 dark:border-slate-700/50 items-center group/code cursor-pointer hover:border-blue-400 transition" 
-                                             @click="copyCode(course.enrollment_code)" title="Click to copy code">
+                                        <div class="bg-slate-50 dark:bg-slate-900/50 rounded inline-flex px-1.5 py-1 border border-slate-100 dark:border-slate-700/50 items-center group/code cursor-pointer hover:border-blue-400 transition"
+                                              @click="copyCode(course.enrollment_code)" title="Click to copy code">
                                             <span class="text-[8px] sm:text-[9px] text-slate-400 dark:text-slate-500 uppercase font-black tracking-widest mr-1.5">Code:</span>
                                             <span class="text-[10px] sm:text-xs font-mono font-bold text-blue-600 dark:text-blue-400 tracking-widest leading-none">{{ course.enrollment_code }}</span>
                                         </div>
@@ -170,22 +215,23 @@ const formatYearLevel = (level) => {
                                     </div>
 
                                     <div class="flex items-center gap-1.5 sm:gap-2 mt-2 sm:pt-3 sm:border-t border-slate-100 dark:border-slate-700">
-                                        <Link :href="route('teacher.courses.show', course.id)" 
-                                            class="flex-1 flex items-center justify-center py-1.5 sm:py-2 bg-blue-600 text-white hover:bg-blue-500 rounded sm:rounded-md transition font-black text-[9px] sm:text-[10px] uppercase tracking-wider shadow-sm">
+                                        <Link :href="route('teacher.courses.show', course.id)"
+                                             class="flex-1 flex items-center justify-center py-2 bg-blue-600 text-white hover:bg-blue-500 rounded-md transition font-black text-[9px] sm:text-[10px] uppercase tracking-wider shadow-sm">
                                             Manage Class
                                         </Link>
                                     </div>
                                 </div>
                             </div>
-
                         </div>
 
                         <div v-else class="text-center py-16 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 shadow-sm mx-1 sm:mx-0">
                             <svg class="mx-auto h-10 w-10 text-slate-300 dark:text-slate-600 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
                             </svg>
-                            <h3 class="text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white">No {{ activeTab }} classes</h3>
-                            <p v-if="activeTab === 'active'" class="mt-1 text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Get started by creating your first class.</p>
+                            <h3 class="text-[11px] font-black uppercase tracking-widest text-slate-900 dark:text-white">No classes found</h3>
+                            <p class="mt-1 text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">
+                                {{ searchQuery ? 'Adjust your search filters.' : (activeTab === 'active' ? 'Get started by creating your first class.' : 'No hidden classes.') }}
+                            </p>
                         </div>
                     </div>
                 </div>

@@ -5,6 +5,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import { Head, router, useForm, Link, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
+import axios from 'axios';
 import * as XLSX from 'xlsx';
 
 const props = defineProps({
@@ -33,6 +34,15 @@ const selectedCourse = ref(null);
 
 const selectedIds = ref([]);
 const isBulkDeleteModalOpen = ref(false);
+
+// Bulk Status (Publish/Draft) Modal Logic
+const isBulkStatusModalOpen = ref(false);
+const bulkStatusForm = useForm({ password: '', course_ids: [], action: '' });
+
+// NEW: Enter Course Password Security Modal Logic
+const isEnterModalOpen = ref(false);
+const targetCourseId = ref(null);
+const enterForm = useForm({ password: '' });
 
 const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -117,7 +127,7 @@ const filteredCourses = computed(() => {
 
     return result.sort((a, b) => {
         if (sortOrder.value === 'newest') return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-        if (sortOrder.value === 'oldest') return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        if (sortOrder.value === 'oldest') return new Date(a.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
         if (sortOrder.value === 'students_high') return (b.enrollments ? b.enrollments.length : 0) - (a.enrollments ? a.enrollments.length : 0);
         if (sortOrder.value === 'students_low') return (a.enrollments ? a.enrollments.length : 0) - (b.enrollments ? b.enrollments.length : 0);
         return 0;
@@ -209,6 +219,42 @@ const submitBulkDelete = () => {
     });
 };
 
+// Status Change Modal
+const openBulkStatus = (action, singleId = null) => {
+    bulkStatusForm.action = action;
+    bulkStatusForm.course_ids = singleId ? [singleId] : selectedIds.value;
+    bulkStatusForm.password = '';
+    bulkStatusForm.clearErrors();
+    isBulkStatusModalOpen.value = true;
+};
+
+const submitBulkStatus = () => {
+    bulkStatusForm.post(route('admin.courses.bulk-toggle-status'), {
+        preserveScroll: true,
+        onSuccess: () => {
+            isBulkStatusModalOpen.value = false;
+            selectedIds.value = [];
+        }
+    });
+};
+
+// NEW: Enter Course Security Check
+const openEnterModal = (courseId) => {
+    targetCourseId.value = courseId;
+    enterForm.password = '';
+    enterForm.clearErrors();
+    isEnterModalOpen.value = true;
+};
+
+const submitEnterCourse = () => {
+    enterForm.post(route('admin.courses.enter', targetCourseId.value), {
+        preserveScroll: true,
+        onSuccess: () => {
+            isEnterModalOpen.value = false;
+        }
+    });
+};
+
 const exportToExcel = () => {
     const wb = XLSX.utils.book_new();
 
@@ -263,20 +309,19 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
         <div class="max-w-7xl mx-auto px-3 sm:px-6 flex flex-col md:flex-row gap-3 md:gap-5 items-start">
             
-            <!-- FIXED: ASIDE ORDER-1 KEEPS BUTTONS ON TOP FOR MOBILE -->
-            <aside class="w-full md:w-12 shrink-0 flex flex-row md:flex-col gap-2 justify-end md:justify-start sticky top-2 md:top-6 z-10 order-1 md:order-1 mb-4 md:mb-0">
+            <aside class="w-full md:w-12 shrink-0 flex flex-row md:flex-col gap-2 justify-end md:justify-start sticky top-2 md:top-6 z-10 order-1 mb-4 md:mb-0">
                 <button @click="isCreateModalOpen = true" class="group relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-blue-600 hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
                     <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                     <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Batch Create</span>
                 </button>
 
                 <button @click="exportToExcel" class="group relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
-                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 01-2 2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
                     <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Export Excel</span>
                 </button>
             </aside>
 
-            <div class="flex-1 min-w-0 w-full order-2 md:order-2">
+            <div class="flex-1 min-w-0 w-full order-2">
                 <!-- COMPACT FILTERS -->
                 <div class="flex flex-col lg:flex-row gap-2 mb-3">
                     <div class="relative flex-1">
@@ -332,18 +377,23 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <span class="text-[9px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 mr-auto">{{ selectedIds.length }} Selected</span>
                         <button v-if="activeTab === 'hidden'" @click="handleBulkHide(false)" class="text-[8px] bg-white dark:bg-slate-800 text-emerald-600 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded uppercase tracking-widest font-black shadow-sm hover:bg-emerald-50 transition">Restore</button>
                         <button v-if="activeTab === 'active'" @click="handleBulkHide(true)" class="text-[8px] bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded uppercase tracking-widest font-black shadow-sm hover:bg-slate-100 transition">Hide</button>
+                        
+                        <button @click="openBulkStatus('publish')" class="text-[8px] bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded uppercase tracking-widest font-black shadow-sm transition">Publish</button>
+                        <button @click="openBulkStatus('draft')" class="text-[8px] bg-slate-600 hover:bg-slate-500 text-white px-2.5 py-1 rounded uppercase tracking-widest font-black shadow-sm transition">Draft</button>
+
                         <button @click="openBulkDelete()" class="text-[8px] bg-red-600 hover:bg-red-500 text-white px-2.5 py-1 rounded uppercase tracking-widest font-black shadow-sm transition">Delete All</button>
                     </div>
                 </transition>
 
-                <div class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-8">
+                <!-- DESKTOP TABLE VIEW -->
+                <div class="hidden md:block bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-8">
                     <div class="overflow-x-auto custom-scrollbar">
-                        <table class="w-full text-left text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap sm:whitespace-normal">
+                        <table class="w-full text-left text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                             <thead class="text-[8px] sm:text-[9px] uppercase font-bold text-slate-400 bg-slate-50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-700">
                                 <tr>
                                     <th class="px-2 sm:px-3 py-1.5 w-6 sm:w-8"><input type="checkbox" :checked="isAllSelected && filteredCourses.length > 0" @change="toggleAll" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm" /></th>
-                                    <th class="px-2 py-1.5 w-full sm:w-auto">Course Details</th>
-                                    <th class="px-2 py-1.5 hidden sm:table-cell">Schedule & Room</th>
+                                    <th class="px-2 py-1.5 w-full">Course Details</th>
+                                    <th class="px-2 py-1.5">Schedule & Room</th>
                                     <th class="px-2 py-1.5 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -352,7 +402,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     
                                     <td class="px-2 sm:px-3 py-1.5"><input type="checkbox" :checked="selectedIds.includes(course.id)" @change="toggleSelection(course.id)" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm" /></td>
 
-                                    <td class="px-2 py-1.5 flex flex-col sm:table-cell cursor-pointer" @click="toggleSelection(course.id)">
+                                    <td class="px-2 py-1.5 cursor-pointer" @click="toggleSelection(course.id)">
                                         <div class="flex items-center gap-2">
                                             <div v-if="course.thumbnail" class="w-5 h-5 sm:w-6 sm:h-6 rounded bg-slate-200 shrink-0 overflow-hidden">
                                                 <img :src="course.thumbnail" class="w-full h-full object-cover" />
@@ -360,26 +410,26 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                             <div v-else class="w-5 h-5 sm:w-6 sm:h-6 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center shrink-0">
                                                 <span class="text-[8px] font-black uppercase">{{ formatYearLevel(course.difficulty_level).charAt(0) }}Y</span>
                                             </div>
-                                            <div class="min-w-0">
-                                                <div class="font-bold text-slate-900 dark:text-white truncate max-w-[140px] sm:max-w-xs leading-tight text-[10px] sm:text-xs">{{ course.title }}</div>
-                                                <div class="text-[8px] sm:text-[9px] mt-0.5 truncate max-w-[140px] sm:max-w-xs leading-tight opacity-80 text-blue-600 dark:text-blue-400">{{ course.teacher ? course.teacher.name : 'Unassigned' }}</div>
+                                            <div class="min-w-0 flex-1">
+                                                <div class="flex items-center gap-1.5 mb-0.5">
+                                                    <span v-if="course.is_published" class="text-[6px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 px-1 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 shrink-0">Live</span>
+                                                    <span v-else class="text-[6px] font-black uppercase tracking-widest bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600 shrink-0">Draft</span>
+                                                    
+                                                    <div class="font-bold text-slate-900 dark:text-white truncate max-w-[200px] sm:max-w-xs leading-tight text-[10px] sm:text-xs">{{ course.title }}</div>
+                                                </div>
+                                                <div class="text-[8px] sm:text-[9px] truncate max-w-[200px] sm:max-w-xs leading-tight opacity-80 text-blue-600 dark:text-blue-400">{{ course.teacher ? course.teacher.name : 'Unassigned' }}</div>
                                             </div>
                                         </div>
                                     </td>
                                     
-                                    <!-- SCHEDULE DISPLAY BLOCK -->
-                                    <td class="px-2 py-1.5 hidden sm:table-cell align-top">
-                                        <div v-if="course.days && course.days.length > 0" class="flex flex-col">
-                                            <div class="flex gap-1 mb-1 flex-wrap">
+                                    <td class="px-2 py-1.5 align-middle">
+                                        <div v-if="course.days && course.days.length > 0" class="flex flex-col justify-center h-full">
+                                            <div class="flex gap-1 mb-1">
                                                 <span v-for="d in course.days" :key="d" class="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-1 py-0.5 rounded text-[7px] font-black uppercase tracking-widest">{{ d }}</span>
                                             </div>
-                                            <span class="text-[8px] font-bold text-slate-500 flex items-center gap-1">
+                                            <span class="text-[8px] font-bold text-slate-500 flex items-center gap-1 mt-0.5">
                                                 <svg class="w-2.5 h-2.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                                 {{ course.start_time ? course.start_time.substring(0,5) : '' }} - {{ course.end_time ? course.end_time.substring(0,5) : '' }}
-                                            </span>
-                                            <span class="text-[8px] font-bold text-slate-500 flex items-center gap-1 mt-0.5">
-                                                <svg class="w-2.5 h-2.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                                                {{ course.room || 'TBA' }}
                                             </span>
                                         </div>
                                         <div v-else class="text-[8px] text-slate-400 italic">No schedule set</div>
@@ -387,23 +437,34 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     
                                     <td class="px-2 py-1.5 text-right align-middle">
                                         <div class="flex items-center justify-end gap-1 min-w-[80px]">
-                                            <button v-if="!hiddenCourses.includes(course.id)" @click="toggleHideSingle(course.id)" class="p-1 sm:p-1.5 text-slate-400 hover:text-slate-700 bg-white hover:bg-slate-100 dark:bg-transparent dark:hover:bg-slate-800 rounded transition shadow-sm border border-transparent" title="Hide">
+                                            <button v-if="!hiddenCourses.includes(course.id)" @click="toggleHideSingle(course.id)" class="p-1.5 text-slate-400 hover:text-slate-700 bg-white hover:bg-slate-100 dark:bg-transparent dark:hover:bg-slate-800 rounded transition shadow-sm border border-transparent" title="Hide (Local)">
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0a10.05 10.05 0 013.825-1.542m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0a10.05 10.05 0 013.825-1.542m5.858.908A9.97 9.97 0 0121 12c-1.274-4.057-5.064-7-9.542-7-1.274 0-2.483.253-3.582.71" /></svg>
                                             </button>
-                                            <button v-else @click="toggleHideSingle(course.id)" class="p-1 sm:p-1.5 text-emerald-500 hover:text-emerald-700 bg-white hover:bg-emerald-50 dark:bg-transparent dark:hover:bg-emerald-900/30 rounded transition shadow-sm border border-transparent" title="Restore">
+                                            <button v-else @click="toggleHideSingle(course.id)" class="p-1.5 text-emerald-500 hover:text-emerald-700 bg-white hover:bg-emerald-50 dark:bg-transparent dark:hover:bg-emerald-900/30 rounded transition shadow-sm border border-transparent" title="Restore (Local)">
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                                             </button>
 
-                                            <Link :href="route('teacher.courses.show', course.id)" class="text-[8px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 sm:px-2 py-1 sm:py-1.5 rounded flex items-center gap-1 hover:bg-blue-200 dark:hover:bg-blue-800/50 transition shadow-sm" title="Enter Class">
+                                            <!-- Enter Course Button with Admin Password Security -->
+                                            <button @click="openEnterModal(course.id)" class="text-[8px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-1.5 rounded flex items-center gap-1 hover:bg-blue-200 dark:hover:bg-blue-800/50 transition shadow-sm" title="Enter Class">
                                                 <svg class="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                                                <span class="hidden sm:inline">Enter</span>
-                                            </Link>
+                                                <span class="hidden xl:inline">Enter</span>
+                                            </button>
 
-                                            <button @click="openEditModal(course)" class="text-[8px] font-bold uppercase tracking-wide bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 sm:px-2 py-1 sm:py-1.5 rounded flex items-center gap-1 hover:bg-slate-200 transition shadow-sm">
+                                            <!-- Publish/Draft Action Button -->
+                                            <button v-if="!course.is_published" @click="openBulkStatus('publish', course.id)" class="text-[8px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 px-1.5 sm:px-2 py-1 sm:py-1.5 rounded flex items-center gap-1 hover:bg-emerald-200 dark:hover:bg-emerald-800/50 transition shadow-sm" title="Publish Course">
+                                                <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                                                <span class="hidden xl:inline">Publish</span>
+                                            </button>
+                                            <button v-else @click="openBulkStatus('draft', course.id)" class="text-[8px] font-black uppercase tracking-widest bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300 px-1.5 sm:px-2 py-1 sm:py-1.5 rounded flex items-center gap-1 hover:bg-slate-200 dark:hover:bg-slate-600 transition shadow-sm" title="Set to Draft">
+                                                <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                                <span class="hidden xl:inline">Draft</span>
+                                            </button>
+
+                                            <button @click="openEditModal(course)" class="text-[8px] font-bold uppercase tracking-wide bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1.5 rounded flex items-center gap-1 hover:bg-slate-200 transition shadow-sm">
                                                 Edit
                                             </button>
 
-                                            <button @click="openBulkDelete(course.id)" class="p-1 sm:p-1.5 text-slate-400 hover:text-red-600 bg-white hover:bg-red-50 dark:bg-transparent dark:hover:bg-red-900/30 rounded transition shadow-sm border border-transparent hover:border-red-200" title="Delete">
+                                            <button @click="openBulkDelete(course.id)" class="p-1.5 text-slate-400 hover:text-red-600 bg-white hover:bg-red-50 dark:bg-transparent dark:hover:bg-red-900/30 rounded transition shadow-sm border border-transparent hover:border-red-200" title="Delete">
                                                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                             </button>
                                         </div>
@@ -419,11 +480,81 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     </div>
                 </div>
 
+                <!-- MOBILE STACKED CARDS VIEW -->
+                <div class="md:hidden flex flex-col gap-2 pb-8">
+                    <div v-for="course in filteredCourses" :key="course.id" class="p-3 flex flex-col gap-3 rounded-lg border shadow-sm transition-colors" :class="selectedIds.includes(course.id) ? 'bg-blue-50/50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-800' : 'bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700'">
+                        <div class="flex items-start gap-3">
+                            <input type="checkbox" :checked="selectedIds.includes(course.id)" @change="toggleSelection(course.id)" class="mt-1 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm shrink-0" />
+                            
+                            <div class="flex items-center gap-2.5 flex-1 min-w-0" @click="toggleSelection(course.id)">
+                                <div v-if="course.thumbnail" class="w-10 h-10 rounded-lg bg-slate-200 shrink-0 overflow-hidden shadow-sm">
+                                    <img :src="course.thumbnail" class="w-full h-full object-cover" />
+                                </div>
+                                <div v-else class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center shrink-0 shadow-sm">
+                                    <span class="text-[10px] font-black uppercase">{{ formatYearLevel(course.difficulty_level).charAt(0) }}Y</span>
+                                </div>
+                                
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-1.5 mb-1">
+                                        <span v-if="course.is_published" class="text-[7px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 shrink-0">Live</span>
+                                        <span v-else class="text-[7px] font-black uppercase tracking-widest bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 shrink-0">Draft</span>
+                                        <div class="font-black text-slate-900 dark:text-white truncate text-xs">{{ course.title }}</div>
+                                    </div>
+                                    <div class="text-[9px] font-bold opacity-80 text-blue-600 dark:text-blue-400 truncate">{{ course.teacher ? course.teacher.name : 'Unassigned' }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center justify-between mt-1 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                            <!-- Schedule summary -->
+                            <div class="text-[8px] font-bold text-slate-500 truncate pr-2">
+                                <span v-if="course.days && course.days.length">
+                                    {{ course.days.join(', ') }} &bull; {{ course.start_time ? course.start_time.substring(0,5) : '' }}
+                                </span>
+                                <span v-else class="italic">No Schedule</span>
+                            </div>
+
+                            <!-- Mobile Action Buttons -->
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <button v-if="!hiddenCourses.includes(course.id)" @click="toggleHideSingle(course.id)" class="p-1 text-slate-400 hover:text-slate-700 bg-slate-50 dark:bg-slate-700/50 rounded shadow-sm border border-slate-200 dark:border-slate-600" title="Hide">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0a10.05 10.05 0 013.825-1.542m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0a10.05 10.05 0 013.825-1.542m5.858.908A9.97 9.97 0 0121 12c-1.274-4.057-5.064-7-9.542-7-1.274 0-2.483.253-3.582.71" /></svg>
+                                </button>
+                                <button v-else @click="toggleHideSingle(course.id)" class="p-1 text-emerald-500 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 rounded shadow-sm border border-emerald-200 dark:border-emerald-800" title="Restore">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                </button>
+
+                                <button @click="openEnterModal(course.id)" class="p-1 text-blue-600 bg-blue-50 dark:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-800 shadow-sm" title="Enter Class">
+                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                </button>
+
+                                <button v-if="!course.is_published" @click="openBulkStatus('publish', course.id)" class="p-1 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 rounded border border-emerald-200 dark:border-emerald-800 shadow-sm" title="Publish">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                                </button>
+                                <button v-else @click="openBulkStatus('draft', course.id)" class="p-1 text-slate-600 bg-slate-100 dark:bg-slate-700/50 rounded border border-slate-300 dark:border-slate-600 shadow-sm" title="Draft">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </button>
+
+                                <button @click="openEditModal(course)" class="p-1 text-slate-600 bg-slate-100 dark:bg-slate-700 rounded border border-slate-300 dark:border-slate-600 shadow-sm" title="Edit">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                </button>
+
+                                <button @click="openBulkDelete(course.id)" class="p-1 text-red-600 bg-red-50 dark:bg-red-900/30 rounded border border-red-200 dark:border-red-800 shadow-sm" title="Delete">
+                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div v-if="filteredCourses.length === 0" class="px-2 py-8 text-center text-slate-400 dark:text-slate-500 text-[10px] bg-white dark:bg-slate-800 rounded-lg border border-dashed border-slate-200 dark:border-slate-700">
+                        <div class="font-black uppercase tracking-widest mb-1 text-slate-300 dark:text-slate-600">No Courses Found</div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
         <!-- ========================================== -->
-        <!-- BATCH CREATE MODAL (NOW SCROLLABLE)        -->
+        <!-- BATCH CREATE MODAL                         -->
         <!-- ========================================== -->
         <Modal :show="isCreateModalOpen" :closeable="false" @close="isCreateModalOpen = false" maxWidth="lg">
             <div class="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
@@ -431,7 +562,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                 
                 <form @submit.prevent="submitCourse" class="flex flex-col min-h-0">
                     
-                    <!-- SCROLLABLE BODY -->
                     <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 sm:pr-2 pb-2">
                         <div class="mb-3 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
                             <InputLabel value="1. Select Instructor" class="text-[9px] font-black uppercase tracking-widest text-blue-600 mb-1" />
@@ -442,7 +572,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             <InputError :message="form.errors.teacher_id" class="mt-1 text-[9px]" />
                         </div>
 
-                        <!-- SLIDABLE TAB BAR -->
                         <div class="flex overflow-x-auto gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 mb-3 no-scrollbar">
                             <button v-for="(course, index) in form.courses" :key="index" @click="activeCourseTab = index" type="button"
                                 class="px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-colors"
@@ -454,7 +583,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             </button>
                         </div>
 
-                        <!-- DYNAMIC TAB CONTENT -->
                         <div v-for="(course, index) in form.courses" :key="'content-'+index" v-show="activeCourseTab === index" class="space-y-3">
                             <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 px-2 py-1.5 rounded border border-slate-100 dark:border-slate-700">
                                 <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Subject {{ index + 1 }}</span>
@@ -520,7 +648,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         </div>
                     </div>
 
-                    <!-- FIXED FOOTER -->
                     <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
                         <span class="text-[9px] font-black uppercase tracking-widest text-slate-400 hidden sm:inline">Total: {{ form.courses.length }}</span>
                         <div class="flex gap-2 w-full sm:w-auto justify-end">
@@ -535,7 +662,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
         </Modal>
 
         <!-- ========================================== -->
-        <!-- EDITED MODAL (NOW SCROLLABLE)              -->
+        <!-- EDITED MODAL                               -->
         <!-- ========================================== -->
         <Modal :show="isEditModalOpen" :closeable="false" @close="isEditModalOpen = false" maxWidth="md">
             <div class="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
@@ -612,7 +739,65 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
             </div>
         </Modal>
 
-        <!-- ... [Bulk Delete Modal remains at bottom] ... -->
+        <!-- ========================================== -->
+        <!-- ENTER COURSE CONFIRMATION MODAL            -->
+        <!-- ========================================== -->
+        <Modal :show="isEnterModalOpen" :closeable="false" @close="isEnterModalOpen = false" maxWidth="sm">
+            <div class="p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700">
+                <h2 class="text-sm font-black uppercase tracking-tight text-blue-600 flex items-center gap-2 mb-2">
+                    <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    Security Confirmation
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                    Enter your admin password to access and override this course classroom.
+                </p>
+                <form @submit.prevent="submitEnterCourse" class="space-y-4">
+                    <div>
+                        <InputLabel value="Admin Password *" class="text-[9px] font-bold uppercase text-slate-500 mb-1" />
+                        <input v-model="enterForm.password" type="password" :class="inputClass" placeholder="Enter your password" required autofocus />
+                        <InputError :message="enterForm.errors.password" class="mt-1 text-[9px]" />
+                    </div>
+                    <div class="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                        <button type="button" @click="isEnterModalOpen = false" class="text-[10px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 uppercase tracking-widest transition">Cancel</button>
+                        <button :disabled="enterForm.processing" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-[10px] uppercase tracking-widest font-black shadow-sm transition">
+                            Confirm & Enter
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
+
+        <!-- ========================================== -->
+        <!-- STATUS TOGGLE MODAL                        -->
+        <!-- ========================================== -->
+        <Modal :show="isBulkStatusModalOpen" :closeable="false" @close="isBulkStatusModalOpen = false" maxWidth="sm">
+            <div class="p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700">
+                <h2 class="text-sm font-black uppercase tracking-tight flex items-center gap-2 mb-2" :class="bulkStatusForm.action === 'publish' ? 'text-emerald-600' : 'text-slate-700 dark:text-slate-300'">
+                    <svg v-if="bulkStatusForm.action === 'publish'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                    <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Confirm {{ bulkStatusForm.action === 'publish' ? 'Publish' : 'Draft' }}
+                </h2>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                    You are changing the status of <strong>{{ bulkStatusForm.course_ids.length }} course(s)</strong>. 
+                    <span v-if="bulkStatusForm.action === 'publish'">This will make them visible and accessible to students.</span>
+                    <span v-else>This will hide them from students and move them to draft mode.</span>
+                </p>
+                <form @submit.prevent="submitBulkStatus" class="space-y-4">
+                    <div>
+                        <InputLabel value="Admin Password *" class="text-[9px] font-bold uppercase text-slate-500 mb-1" />
+                        <input v-model="bulkStatusForm.password" type="password" :class="inputClass" placeholder="Enter your password" required />
+                        <InputError :message="bulkStatusForm.errors.password" class="mt-1 text-[9px]" />
+                    </div>
+                    <div class="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                        <button type="button" @click="isBulkStatusModalOpen = false" class="text-[10px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 uppercase tracking-widest transition">Cancel</button>
+                        <button :disabled="bulkStatusForm.processing" class="px-4 py-1.5 rounded text-[10px] uppercase tracking-widest font-black shadow-sm transition text-white" :class="bulkStatusForm.action === 'publish' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-600 hover:bg-slate-500'">
+                            Confirm
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </Modal>
+
         <Modal :show="isBulkDeleteModalOpen" :closeable="false" @close="isBulkDeleteModalOpen = false" maxWidth="sm">
             <div class="p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700">
                 <h2 class="text-sm font-black uppercase tracking-tight text-red-600 flex items-center gap-2 mb-2">
