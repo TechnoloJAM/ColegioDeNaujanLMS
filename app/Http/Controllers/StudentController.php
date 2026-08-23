@@ -14,18 +14,21 @@ use Carbon\Carbon;
 
 class StudentController extends Controller
 {
-    // HELPER FUNCTION: Teaches the backend to read the secret tag!
-    private function isHiddenFromStudent($assignment, $enrollmentDate)
+    // HELPER FUNCTION: Accurately evaluates late enrollees based on Approval Time
+    private function isHiddenFromStudent($assignment, $enrollment)
     {
         if (!$assignment->due_date) return false;
         
-        // Look for the invisible sticky note in the description using the NEW tag
+        // Look for the invisible sticky note in the description
         if (!str_contains($assignment->description ?? '', '[RESTRICT_LATE_STUDENTS]')) {
             return false;
         }
 
-        // Check if they enrolled after the deadline
-        return Carbon::parse($enrollmentDate) > Carbon::parse($assignment->due_date);
+        // A student is considered a "late enrollee" if they were officially APPROVED
+        // into the class AFTER the assignment's due date. We use updated_at.
+        $approvalDate = $enrollment->updated_at ?? $enrollment->created_at ?? $enrollment->enrolled_at ?? now();
+
+        return Carbon::parse($approvalDate)->greaterThan(Carbon::parse($assignment->due_date));
     }
 
     public function dashboard()
@@ -50,8 +53,7 @@ class StudentController extends Controller
             })
             ->get()
             ->reject(function($a) use ($enrollments) {
-                $enrollmentDate = $enrollments[$a->course_id]->created_at ?? $enrollments[$a->course_id]->enrolled_at;
-                return $this->isHiddenFromStudent($a, $enrollmentDate);
+                return $this->isHiddenFromStudent($a, $enrollments[$a->course_id]);
             });
 
         $pendingCount = $pendingAssignments->count();
@@ -67,8 +69,7 @@ class StudentController extends Controller
             
             foreach ($assignments as $a) {
                 // Skip hidden tasks so it doesn't ruin their grade average!
-                $enrollmentDate = $enrollments[$courseId]->created_at ?? $enrollments[$courseId]->enrolled_at;
-                if ($this->isHiddenFromStudent($a, $enrollmentDate)) {
+                if ($this->isHiddenFromStudent($a, $enrollments[$courseId])) {
                     continue; 
                 }
 
@@ -97,15 +98,14 @@ class StudentController extends Controller
                 $q->where('closing_date', '>=', now())
                   ->orWhereNull('closing_date');
             })
-            ->whereDoesntHave('submissions', function($q) use ($user) {
-                 $q->where('user_id', $user->id); 
+            ->whereDoesntHave('submissions', function($q) use ($user) { 
+                 $q->where('user_id', $user->id);  
              })
             ->with('course:id,title')
             ->orderBy('due_date', 'asc')
             ->get()
             ->reject(function($a) use ($enrollments) {
-                $enrollmentDate = $enrollments[$a->course_id]->created_at ?? $enrollments[$a->course_id]->enrolled_at;
-                return $this->isHiddenFromStudent($a, $enrollmentDate);
+                return $this->isHiddenFromStudent($a, $enrollments[$a->course_id]);
             })
             ->take(5)
             ->values();
@@ -156,7 +156,6 @@ class StudentController extends Controller
         }
 
         $user = Auth::user();
-
         if ($user->enrolledCourses()->where('course_id', $course->id)->exists()) {
             return back()->withErrors(['enrollment_code' => 'You are already enrolled (or pending approval) in this class!']);
         }
@@ -180,13 +179,14 @@ class StudentController extends Controller
         }
 
         $enrollment = Enrollment::where('user_id', Auth::id())->where('course_id', $course->id)->first();
+
         if (!$enrollment || $enrollment->status !== 'approved') abort(403, 'You are not approved for this class.');
 
         $now = now();
         $course->load([
             'teacher',
-            'lessons' => function($q) use ($now) { 
-                 $q->where('approval_status', 'approved')
+            'lessons' => function($q) use ($now) {
+                  $q->where('approval_status', 'approved')
                    ->where(function ($query) use ($now) {
                        $query->whereNull('available_from')->orWhere('available_from', '<=', $now);
                    })
@@ -200,9 +200,8 @@ class StudentController extends Controller
         ]);
 
         // Strip out hidden assignments before sending to the Vue file
-        $enrollmentDate = $enrollment->created_at ?? $enrollment->enrolled_at;
-        $filteredAssignments = $course->assignments->reject(function($a) use ($enrollmentDate) {
-            return $this->isHiddenFromStudent($a, $enrollmentDate);
+        $filteredAssignments = $course->assignments->reject(function($a) use ($enrollment) {
+            return $this->isHiddenFromStudent($a, $enrollment);
         })->values();
         
         $course->setRelation('assignments', $filteredAssignments);
@@ -232,9 +231,8 @@ class StudentController extends Controller
 
         // Filter hidden assignments from the main Tasks list
         foreach ($courses as $course) {
-            $enrollmentDate = $course->pivot->created_at ?? $course->pivot->enrolled_at;
-            $filteredAssignments = $course->assignments->reject(function($a) use ($enrollmentDate) {
-                return $this->isHiddenFromStudent($a, $enrollmentDate);
+            $filteredAssignments = $course->assignments->reject(function($a) use ($course) {
+                return $this->isHiddenFromStudent($a, $course->pivot);
             })->values();
             
             $course->setRelation('assignments', $filteredAssignments);
@@ -335,13 +333,13 @@ class StudentController extends Controller
             $maxAssign = 0; $maxAct = 0; $maxPt = 0; $totalMax = 0;
             $earnedAssign = 0; $earnedAct = 0; $earnedPt = 0; $totalEarned = 0;
 
+            // Fetch once per course to optimize speed
             $enrollment = Enrollment::where('user_id', $user->id)->where('course_id', $course->id)->first();
-            $enrollmentDate = $enrollment ? ($enrollment->created_at ?? $enrollment->enrolled_at) : null;
 
             $validAssignments = collect();
 
             foreach($course->assignments as $assignment) {
-                if ($this->isHiddenFromStudent($assignment, $enrollmentDate)) {
+                if ($this->isHiddenFromStudent($assignment, $enrollment)) {
                     continue;
                 }
 

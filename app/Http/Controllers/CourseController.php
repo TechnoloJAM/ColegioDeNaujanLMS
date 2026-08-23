@@ -146,7 +146,6 @@ class CourseController extends Controller
         $teacherId = Auth::id();
         $user = Auth::user();
         
-        // Eager load teacher so instructor filtering works
         if ($user->role === 'admin') {
             $allCourses = Course::with('teacher:id,name')->select('id', 'title', 'teacher_id')->orderBy('created_at', 'desc')->get();
         } else {
@@ -157,7 +156,9 @@ class CourseController extends Controller
             return Inertia::render('Teacher/Gradebook', ['course' => null, 'courses' => [], 'assignments' => [], 'students' => [], 'all_export_data' => []]);
         }
 
-        // --- SCENARIO 1: ALL COURSES (MEGA VIEW) ---
+        // ==========================================
+        // SCENARIO 1: ALL COURSES (MEGA VIEW)
+        // ==========================================
         if ($courseParam === 'all') {
             $managedCoursesQuery = ($user->role === 'admin') ? Course::query() : Course::where('teacher_id', $teacherId);
             $coursesWithData = $managedCoursesQuery->with(['teacher:id,name', 'assignments'])
@@ -239,7 +240,9 @@ class CourseController extends Controller
             ]);
         }
 
-        // --- SCENARIO 2: SINGLE COURSE VIEW ---
+        // ==========================================
+        // SCENARIO 2: SINGLE COURSE
+        // ==========================================
         if (!$courseParam) {
             $course = Course::with('teacher:id,name')->find($allCourses->first()->id);
         } else {

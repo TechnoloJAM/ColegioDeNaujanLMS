@@ -27,6 +27,10 @@ const formSubmission = useForm({ files: [], text_content: '' });
 const showMaterialPreview = ref(false);
 const selectedMaterialPath = ref(null);
 
+const cleanDescription = (text) => {
+    return text ? text.replace('[RESTRICT_LATE_STUDENTS]', '').trim() : '';
+};
+
 watch(activeTab, (newTab) => {
     const url = new URL(window.location.href);
     url.searchParams.set('tab', newTab);

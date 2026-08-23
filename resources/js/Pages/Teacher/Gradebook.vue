@@ -1,7 +1,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
-import { Download, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock, Search, BookOpen, User } from 'lucide-vue-next';
+import { Download, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock } from 'lucide-vue-next';
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
@@ -22,32 +22,11 @@ const userId = page.props.auth.user.id;
 const storageKey = `lms_hidden_courses_${userId}`;
 const hiddenCourses = ref(JSON.parse(localStorage.getItem(storageKey)) || []);
 
+// Filter out courses that the teacher has hidden globally
 const visibleCourses = computed(() => {
     return props.courses ? props.courses.filter(c => !hiddenCourses.value.includes(c.id)) : [];
 });
-
 // ==========================================
-// Search & Filter Logic (Universal)
-// ==========================================
-const searchQuery = ref('');
-const selectedCourseFilter = ref('all');
-const selectedInstructorFilter = ref('all');
-
-const getTeacherName = (c) => {
-    return c.teacher || (props.courses?.find(x => x.id === c.id)?.teacher?.name) || 'Unassigned';
-};
-
-const uniqueCourses = computed(() => {
-    if (!props.all_export_data) return [];
-    const visibleData = props.all_export_data.filter(c => !hiddenCourses.value.includes(c.id));
-    return [...new Set(visibleData.map(c => c.title))].sort();
-});
-
-const uniqueInstructors = computed(() => {
-    if (!props.all_export_data) return [];
-    const visibleData = props.all_export_data.filter(c => !hiddenCourses.value.includes(c.id));
-    return [...new Set(visibleData.map(c => getTeacherName(c)))].sort();
-});
 
 const expandedStudentId = ref(null);
 const sortOrder = ref('alpha_asc');
@@ -79,15 +58,17 @@ const getSubmission = (student, assignmentId) => {
     return student.submissions.find(s => s.assignment_id === assignmentId);
 };
 
+// Accurately evaluates late enrollees based on Approval Time (Matching PHP Controller logic)
 const isLateEnrollee = (student, assignment) => {
     const desc = assignment.description || '';
     const isHiddenFromLate = desc.includes('[RESTRICT_LATE_STUDENTS]');
     
     if (!isHiddenFromLate) return false; 
     if (!assignment.due_date) return false; 
-    if (!student.pivot || !student.pivot.created_at) return false;
+    if (!student.pivot) return false;
     
-    const enrollmentDate = new Date(student.pivot.created_at);
+    // Uses updated_at (the moment the teacher clicked approve)
+    const enrollmentDate = new Date(student.pivot.updated_at || student.pivot.created_at);
     const dueDate = new Date(assignment.due_date);
     
     return enrollmentDate > dueDate;
@@ -192,18 +173,10 @@ const calculatePS = (score, max) => {
     return ((score / max) * 100).toFixed(1);
 };
 
-// Filter and search students in Single Course View
 const processedStudents = computed(() => {
     if (!props.students) return [];
     
-    let list = props.students;
-
-    if (searchQuery.value.trim() !== '') {
-        const q = searchQuery.value.toLowerCase();
-        list = list.filter(s => s.name.toLowerCase().includes(q) || (s.email && s.email.toLowerCase().includes(q)));
-    }
-
-    let result = list.map(student => {
+    let list = props.students.map(student => {
         let assignScore = 0, actScore = 0, ptScore = 0, totalScore = 0;
         
         if (props.assignments) {
@@ -231,7 +204,7 @@ const processedStudents = computed(() => {
         };
     });
 
-    result.sort((a, b) => {
+    list.sort((a, b) => {
         if (sortOrder.value === 'alpha_asc') return a.name.localeCompare(b.name);
         if (sortOrder.value === 'alpha_desc') return b.name.localeCompare(a.name);
         if (sortOrder.value === 'avg_desc') return b.numericAverage - a.numericAverage;
@@ -239,46 +212,29 @@ const processedStudents = computed(() => {
         return 0;
     });
 
-    return result;
+    return list;
 });
 
-// Filter courses, instructors, and search queries in All Courses View
+// Filter Export Data to exclude hidden courses
 const processedAllExportData = computed(() => {
     if (!props.all_export_data) return [];
     
-    let filtered = props.all_export_data.filter(c => !hiddenCourses.value.includes(c.id));
-
-    if (selectedCourseFilter.value !== 'all') {
-        filtered = filtered.filter(c => c.title === selectedCourseFilter.value);
-    }
-
-    if (selectedInstructorFilter.value !== 'all') {
-        filtered = filtered.filter(c => getTeacherName(c) === selectedInstructorFilter.value);
-    }
-
-    if (searchQuery.value.trim() !== '') {
-        const query = searchQuery.value.toLowerCase();
-        filtered = filtered.filter(c => 
-            c.title.toLowerCase().includes(query) || 
-            getTeacherName(c).toLowerCase().includes(query)
-        );
-    }
-
-    return filtered.map(c => {
-        let sortedStudents = [...c.students].sort((a, b) => {
-            if (sortOrder.value === 'alpha_asc') return a.name.localeCompare(b.name);
-            if (sortOrder.value === 'alpha_desc') return b.name.localeCompare(a.name);
-            if (sortOrder.value === 'avg_desc') return b.percentage - a.percentage;
-            if (sortOrder.value === 'avg_asc') return a.percentage - b.percentage;
-            return 0;
+    return props.all_export_data
+        .filter(c => !hiddenCourses.value.includes(c.id)) // HIDE IN MEGA VIEW
+        .map(c => {
+            let sortedStudents = [...c.students].sort((a, b) => {
+                if (sortOrder.value === 'alpha_asc') return a.name.localeCompare(b.name);
+                if (sortOrder.value === 'alpha_desc') return b.name.localeCompare(a.name);
+                if (sortOrder.value === 'avg_desc') return b.percentage - a.percentage;
+                if (sortOrder.value === 'avg_asc') return a.percentage - b.percentage;
+                return 0;
+            });
+            return { ...c, students: sortedStudents };
         });
-        return { ...c, students: sortedStudents };
-    });
 });
 
 const switchCourse = (e) => {
     if (e.target.value) {
-        searchQuery.value = '';
         router.visit(route('teacher.gradebook.index', e.target.value));
     }
 };
@@ -366,7 +322,7 @@ const downloadExcel = () => {
     if (props.course && props.course.id === 'all') {
         const exportData = processedAllExportData.value;
         if (!exportData || exportData.length === 0) {
-            alert("No data available to export. (Make sure your filters aren't hiding all classes!)");
+            alert("No data available to export. (Make sure you haven't hidden all your classes!)");
             return;
         }
 
@@ -394,7 +350,6 @@ const downloadExcel = () => {
     <AuthenticatedLayout>
         <div class="max-w-[100vw] mx-auto pb-12 px-2 sm:px-4">
             
-            <!-- HEADER TOOLBAR -->
             <div v-if="course" class="flex flex-col md:flex-row justify-between md:items-end gap-2 mb-3 sm:mb-4 border-b border-slate-100 dark:border-slate-800 pb-2">
                 <div class="w-full md:w-auto">
                     <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5 sm:gap-2 leading-tight">
@@ -422,7 +377,7 @@ const downloadExcel = () => {
 
                     <button @click="toggleEditMode"
                             :class="isEditMode ? (hasErrors ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-emerald-600 hover:bg-emerald-500 text-white') : 'bg-blue-600 hover:bg-blue-500 text-white'"
-                            class="flex items-center justify-center gap-1 px-2.5 py-1 rounded font-black text-[9px] uppercase tracking-widest shadow-sm transition shrink-0 disabled:opacity-50">
+                            class="flex items-center justify-center gap-1 px-2.5 py-1 rounded font-black text-[9px] uppercase tracking-widest shadow-sm transition shrink-0 disabled:opacity-50 flex-1 md:flex-none">
                         <svg v-if="isSaving" class="animate-spin w-3 h-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -435,57 +390,26 @@ const downloadExcel = () => {
                         </span>
                     </button>
 
-                    <button @click="downloadExcel" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded font-black text-[9px] uppercase tracking-widest shadow-sm transition shrink-0">
+                    <button @click="downloadExcel" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1 rounded font-black text-[9px] uppercase tracking-widest shadow-sm transition shrink-0 flex-1 md:flex-none">
                         <Download class="w-3 h-3" /> <span class="hidden sm:inline">Export</span>
                     </button>
                 </div>
             </div>
 
-            <!-- UNIVERSAL SEARCH AND FILTER BAR (Visible for both Single and Mega view) -->
-            <div v-if="course" class="flex flex-col sm:flex-row gap-2 mb-4 bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                <!-- Search input -->
-                <div class="relative flex-1 min-w-0">
-                    <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input v-model="searchQuery" type="text" :placeholder="course.id === 'all' ? 'Search class or instructor...' : 'Search enrolled student...'" 
-                           class="w-full h-8 pl-8 pr-3 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-[10px] font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 focus:border-transparent transition shadow-inner" />
-                </div>
-                
-                <!-- Mega View Filters (Classes & Instructors) -->
-                <div v-if="course.id === 'all'" class="grid grid-cols-2 sm:flex gap-2 shrink-0">
-                    <div class="relative min-w-0">
-                        <BookOpen class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
-                        <select v-model="selectedCourseFilter" class="w-full h-8 pl-6 pr-6 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 focus:ring-1 focus:ring-blue-500 focus:border-transparent shadow-sm cursor-pointer transition truncate">
-                            <option value="all">All Classes</option>
-                            <option v-for="c in uniqueCourses" :key="c" :value="c">{{ c }}</option>
-                        </select>
-                    </div>
-                    
-                    <div class="relative min-w-0">
-                        <User class="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
-                        <select v-model="selectedInstructorFilter" class="w-full h-8 pl-6 pr-6 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 focus:ring-1 focus:ring-blue-500 focus:border-transparent shadow-sm cursor-pointer transition truncate">
-                            <option value="all">All Instructors</option>
-                            <option v-for="i in uniqueInstructors" :key="i" :value="i">{{ i }}</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
             <!-- VIEW: ALL COURSES SELECTED (MEGA VIEW) -->
-            <div v-if="course && course.id === 'all'" class="space-y-4 sm:space-y-6">
-                
+            <div v-if="course && course.id === 'all'" class="space-y-4 sm:space-y-6 mt-3 sm:mt-4">
                 <div v-if="processedAllExportData.length === 0" class="text-center py-16 text-slate-500 font-bold uppercase tracking-widest text-xs">
-                    No classes match your filters or you have hidden all your active classes.
+                    You have hidden all your active classes. Unhide them to view their gradebooks.
                 </div>
                 
                 <div v-for="c in processedAllExportData" :key="c.id" class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                     
                     <!-- Mega View Class Header -->
                     <div class="px-3 py-2 sm:px-4 sm:py-2.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/80 flex justify-between items-center">
-                        <h3 class="font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest text-[10px] sm:text-xs flex items-center gap-1.5 truncate">
-                            <div class="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></div>
-                            <span class="truncate">{{ c.title }}</span>
+                        <h3 class="font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest text-[10px] sm:text-xs flex items-center gap-1.5">
+                            <div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                            {{ c.title }}
                         </h3>
-                        <span class="text-[8px] font-bold text-slate-400 uppercase shrink-0 ml-2 hidden sm:block">Prof. {{ getTeacherName(c) }}</span>
                     </div>
                     
                     <!-- DESKTOP MEGA VIEW TABLE -->
@@ -495,6 +419,7 @@ const downloadExcel = () => {
                                 <tr>
                                     <th class="px-2 py-1.5 sticky left-0 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm border-r border-slate-200 dark:border-slate-700 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] w-32 sm:w-48">Student Name</th>
                                     
+                                    <!-- COMPACT INDIVIDUAL ASSIGNMENTS -->
                                     <th v-for="a in c.assignments" :key="a.id" class="px-1.5 py-1.5 min-w-[70px] max-w-[100px] border-r border-slate-200 dark:border-slate-700 text-center bg-white dark:bg-slate-800">
                                         <span class="block truncate text-[9px] text-slate-700 dark:text-slate-300" :title="a.title">{{ a.title }}</span>
                                         <span class="text-[7px] text-blue-600 dark:text-blue-400 mt-0.5 block">Max {{ a.points }}</span>
@@ -569,11 +494,11 @@ const downloadExcel = () => {
                                         <div class="font-black text-purple-600 dark:text-purple-400 text-[10px]">{{ student.activity_score > 0 ? ((student.activity_score / c.max_activity) * 100).toFixed(1) : 0 }}%</div>
                                         <div class="font-bold text-slate-500 dark:text-slate-400 text-[7px] mt-0.5">{{ student.activity_score }} Raw</div>
                                     </td>
-                                    <td class="px-1.5 py-1 text-center border-r border-slate-200 dark:border-slate-700 bg-orange-50/10 dark:bg-orange-900/5">
+                                    <td class="px-1.5 py-1 text-center border-r border-slate-200 dark:border-slate-700 bg-orange-50/30 dark:bg-orange-900/10">
                                         <div class="font-black text-orange-600 dark:text-orange-400 text-[10px]">{{ student.pt_score > 0 ? ((student.pt_score / c.max_pt) * 100).toFixed(1) : 0 }}%</div>
                                         <div class="font-bold text-slate-500 dark:text-slate-400 text-[7px] mt-0.5">{{ student.pt_score }} Raw</div>
                                     </td>
-                                    <td class="px-2 py-1 text-center border-l border-emerald-200 dark:border-emerald-800 bg-emerald-50/20 dark:bg-emerald-900/10">
+                                    <td class="px-2 py-1 text-center border-l border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-400">
                                         <span class="text-[10px] font-black block" :class="student.percentage >= 75 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'">
                                             {{ student.percentage }}%
                                         </span>
@@ -663,7 +588,7 @@ const downloadExcel = () => {
                                     </div>
                                     <div class="text-center bg-white dark:bg-slate-800 p-1.5 rounded border border-purple-100 dark:border-purple-800/30">
                                         <span class="block text-[7px] font-black uppercase text-purple-500">Act.</span>
-                                        <span class="block text-[10px] font-black text-purple-600 dark:text-purple-400 mt-0.5">{{ student.activity_score > 0 ? ((student.activity_score / c.max_activity) * 100).toFixed(1) : 0 }}%</span>
+                                        <span class="block text-[10px] font-black text-purple-600 dark:text-purple-400 mt-0.5">{{ student.actPS }}%</span>
                                         <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.activity_score }}/{{ c.max_activity }}</span>
                                     </div>
                                     <div class="text-center bg-white dark:bg-slate-800 p-1.5 rounded border border-orange-100 dark:border-orange-800/30">
@@ -700,11 +625,13 @@ const downloadExcel = () => {
                                     Student Name
                                 </th>
 
+                                <!-- COMPACT INDIVIDUAL ASSIGNMENTS -->
                                 <th v-for="a in assignments" :key="a.id" class="px-1.5 py-1.5 min-w-[70px] max-w-[100px] border-r border-slate-200 dark:border-slate-700 text-center bg-white dark:bg-slate-800">
                                     <span class="block truncate text-[9px] text-slate-700 dark:text-slate-300" :title="a.title">{{ a.title }}</span>
                                     <span class="text-[7px] text-blue-600 dark:text-blue-400 mt-0.5 block">Max {{ a.points }}</span>
                                 </th>
                                 
+                                <!-- COMPACT CATEGORY SUMMARIES -->
                                 <th class="px-1.5 py-1.5 min-w-[70px] border-r border-slate-200 dark:border-slate-700 text-center bg-blue-50/50 dark:bg-blue-900/20">
                                     <span class="block text-blue-800 dark:text-blue-300">Assign</span>
                                     <span class="text-[7px] text-blue-600 dark:text-blue-400 mt-0.5 block">Max {{ maxCategoryPoints.assign }}</span>
@@ -773,6 +700,7 @@ const downloadExcel = () => {
                                     </template>
                                 </td>
 
+                                <!-- COMPACT CATEGORY CELLS -->
                                 <td class="px-1.5 py-1 text-center border-r border-slate-200 dark:border-slate-700 bg-blue-50/20 dark:bg-blue-900/10">
                                     <div class="font-black text-blue-600 dark:text-blue-400 text-[10px]">{{ student.assignPS }}%</div>
                                     <div class="font-bold text-slate-500 dark:text-slate-400 text-[7px] mt-0.5">{{ student.assignScore }} Raw</div>
