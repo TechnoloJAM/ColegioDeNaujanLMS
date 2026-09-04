@@ -149,6 +149,9 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
     // Secure Bulk/Single Course Actions
     Route::post('/courses/bulk-status', [AdminDashboardController::class, 'bulkToggleCourseStatus'])->name('courses.bulk-toggle-status');
     Route::post('/courses/bulk-destroy', [AdminDashboardController::class, 'bulkDestroyCourses'])->name('courses.bulk-destroy');
+
+    // Enter Course as Admin
+    Route::post('/courses/{course}/enter', [AdminDashboardController::class, 'enterCourse'])->name('courses.enter');
     
     // Material Approval
     Route::get('/materials', [AdminDashboardController::class, 'materials'])->name('materials');

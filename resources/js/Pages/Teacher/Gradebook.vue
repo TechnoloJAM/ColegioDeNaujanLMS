@@ -15,7 +15,7 @@ const props = defineProps({
 });
 
 // ==========================================
-// Hidden Courses Sync Logic
+// NEW: Hidden Courses Sync Logic
 // ==========================================
 const page = usePage();
 const userId = page.props.auth.user.id;
@@ -215,7 +215,7 @@ const processedStudents = computed(() => {
     return list;
 });
 
-// Filter Export Data to exclude hidden courses
+// UPDATED: Filter Export Data to exclude hidden courses
 const processedAllExportData = computed(() => {
     if (!props.all_export_data) return [];
     
@@ -354,7 +354,7 @@ const downloadExcel = () => {
                 <div class="w-full md:w-auto">
                     <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5 sm:gap-2 leading-tight">
                         Gradebook
-                        <!-- Dropdown to switch contexts -->
+                        <!-- UPDATED: Uses visibleCourses -->
                         <select @change="switchCourse" class="text-[10px] sm:text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded py-1 pl-2 pr-6 focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm transition max-w-[180px] sm:max-w-none truncate">
                             <option value="all" :selected="course.id === 'all'">All Courses</option>
                             <option v-for="c in visibleCourses" :key="c.id" :value="c.id" :selected="c.id === course.id">{{ c.title }}</option>
