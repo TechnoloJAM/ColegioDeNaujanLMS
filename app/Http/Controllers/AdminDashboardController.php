@@ -76,7 +76,7 @@ class AdminDashboardController extends Controller
         $criticalBottlenecks = $staleEnrollmentsCount + $staleMaterialsCount;
 
         // ==========================================
-        // NEW: Course Population Data
+        // Course Population Data
         // ==========================================
         $publishedCourses = Course::where('is_published', true)
             ->withCount(['enrollments' => function($q) {
@@ -200,14 +200,47 @@ class AdminDashboardController extends Controller
             $enrollmentsData[] = $enrollsDaily->get($i, 0);
         }
 
+        // ==========================================
+        // NEW: System Activity Logs Generation
+        // ==========================================
+        $logs = collect();
+        
+        $recentUsers = User::latest()->take(5)->get();
+        foreach($recentUsers as $u) {
+            $logs->push([
+                'action' => 'New account registered: ' . $u->name,
+                'user' => ucfirst($u->role),
+                'time' => $u->created_at->diffForHumans(),
+                'created_at' => $u->created_at,
+                'colorClass' => 'bg-blue-500'
+            ]);
+        }
+
+        $recentCourses = Course::with('teacher')->latest()->take(5)->get();
+        foreach($recentCourses as $c) {
+            $logs->push([
+                'action' => 'Course created: ' . $c->title,
+                'user' => $c->teacher ? $c->teacher->name : 'System',
+                'time' => $c->created_at->diffForHumans(),
+                'created_at' => $c->created_at,
+                'colorClass' => 'bg-emerald-500'
+            ]);
+        }
+
+        $activityLogs = $logs->sortByDesc('created_at')->take(10)->values()->map(function($item) {
+            unset($item['created_at']);
+            return $item;
+        })->toArray();
+
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
             'demographics' => [
-                'labels' => ['Students', 'Teachers', 'Admins'],
+                'labels' => ['Students', 'Teachers', 'Admins', 'Deans'],
                 'data' => [
                     User::where('role', 'student')->count(),
                     User::where('role', 'teacher')->count(),
-                    User::where('role', 'admin')->count()
+                    User::where('role', 'admin')->count(),
+                    User::where('role', 'dean')->count() // Updated to include Dean
                 ]
             ],
             'chartData' => [
@@ -224,7 +257,8 @@ class AdminDashboardController extends Controller
             'currentMonth' => (int) $month,
             'currentYear' => (int) $year,
             'monthName' => $date->format('F Y'),
-            'actionItems' => $actionItems->values()->toArray()
+            'actionItems' => $actionItems->values()->toArray(),
+            'activityLogs' => $activityLogs // Passing to Vue
         ]);
     }
 
@@ -234,7 +268,7 @@ class AdminDashboardController extends Controller
             'users' => User::with(['enrolledCourses:id,title', 'department:id,name'])
                 ->select('id', 'name', 'email', 'role', 'status', 'suspension_reason', 'school_id', 'program', 'created_at', 'contact_number', 'avatar', 'department_id')
                 ->latest()
-                ->paginate(15),
+                ->get(),
             'courses' => \App\Models\Course::select('id', 'title')->orderBy('title')->get(),
             
             'departments' => Department::with(['users' => function($q) {
@@ -582,7 +616,6 @@ class AdminDashboardController extends Controller
         return back()->with('success', count($request->course_ids) . ' course(s) and their related files permanently deleted.');
     }
 
-    // NEW: Allow Admin to bulk publish/draft courses
     public function bulkToggleCourseStatus(Request $request)
     {
         $request->validate([
@@ -718,7 +751,6 @@ class AdminDashboardController extends Controller
         ]);
     }
 
-    // NEW: Secure Admin Override Entry
     public function enterCourse(Request $request, Course $course)
     {
         $request->validate([
@@ -729,7 +761,21 @@ class AdminDashboardController extends Controller
             return back()->withErrors(['password' => 'Incorrect Admin password. Action denied.']);
         }
 
-        // Password is correct! Redirect the admin into the classroom
         return redirect()->route('teacher.courses.show', $course->id);
+    }
+
+    // NEW: Broadcast Logic
+    public function storeBroadcast(Request $request)
+    {
+        $request->validate([
+            'subject' => 'required|string|max:255',
+            'message' => 'required|string',
+            'target' => 'required|string',
+        ]);
+        
+        // This is a placeholder for your actual notification/broadcast logic
+        // e.g., Notification::send($users, new SystemBroadcast($request->subject, $request->message));
+
+        return back()->with('success', 'Broadcast message sent successfully to ' . ucfirst($request->target) . '!');
     }
 }

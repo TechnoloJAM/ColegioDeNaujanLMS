@@ -6,13 +6,14 @@ import InputError from '@/Components/InputError.vue';
 import { Head, router, useForm, Link } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import * as XLSX from 'xlsx';
-import { Users, Building2, Plus, ShieldAlert, Key, UserCog, Trash2, X } from 'lucide-vue-next';
+import { Users, Building2, Plus, ShieldAlert, Key, UserCog, Trash2, X, Search, Filter, BookOpen, Calendar, Download } from 'lucide-vue-next';
 
 const props = defineProps({
     users: [Array, Object],
     departments: Array 
 });
 
+// Normalize the data whether the backend sends an array or a paginated object
 const usersList = computed(() => {
     return Array.isArray(props.users) ? props.users : (props.users.data || []);
 });
@@ -43,7 +44,7 @@ const isBulkDeleteModalOpen = ref(false);
 const form = useForm({ role: 'student', name: '', email: '', department_id: '', school_id: '', program: '', contact_number: '', password: '' });
 const deptForm = useForm({ name: '' });
 const deleteDeptForm = useForm({ password: '' });
-const roleForm = useForm({ role: '', department_id: '', password: '' }); // FIX: Added department_id to Role Form
+const roleForm = useForm({ role: '', department_id: '', password: '' }); 
 const resetPasswordForm = useForm({ password: '', admin_password: '' });
 const impersonateForm = useForm({ user_id: null, password: '' });
 const bulkSuspendForm = useForm({ action: 'suspend', reason: '', password: '', user_ids: [] });
@@ -53,11 +54,16 @@ const selectedUserForRole = ref(null);
 const selectedUserForPassword = ref(null);
 const selectedUserForImpersonate = ref(null);
 
+// ==========================================
+// Client-Side Pagination Logic
+// ==========================================
+const currentPage = ref(1);
+const itemsPerPage = 15;
+
 watch(() => form.role, (newRole) => {
     if (newRole === 'student' || newRole === 'admin') form.department_id = '';
 });
 
-// FIX: Reset department_id dynamically when changing roles in the Edit modal
 watch(() => roleForm.role, (newRole) => {
     if (newRole === 'student' || newRole === 'admin') roleForm.department_id = '';
 });
@@ -106,8 +112,20 @@ const filteredUsers = computed(() => {
     });
 });
 
-watch([userRoleTab, mainTab], () => { selectedIds.value = []; filterProgram.value = 'all'; filterYear.value = 'all'; });
-watch(archiveSubTab, () => { selectedIds.value = []; });
+// Sliced array for current page
+const paginatedUsers = computed(() => {
+    const start = (currentPage.value - 1) * itemsPerPage;
+    return filteredUsers.value.slice(start, start + itemsPerPage);
+});
+
+const totalPages = computed(() => Math.ceil(filteredUsers.value.length / itemsPerPage));
+
+// Reset page and selection when navigating tabs/filters
+watch([userRoleTab, mainTab, searchQuery, filterProgram, filterYear, sortBy], () => { 
+    currentPage.value = 1; 
+    selectedIds.value = []; 
+});
+watch(archiveSubTab, () => { selectedIds.value = []; currentPage.value = 1; });
 
 const toggleSelection = (id) => {
     if (selectedIds.value.includes(id)) selectedIds.value = selectedIds.value.filter(i => i !== id);
@@ -115,13 +133,13 @@ const toggleSelection = (id) => {
 };
 
 const isAllSelected = computed(() => {
-    if (filteredUsers.value.length === 0) return false;
-    return selectedIds.value.length === filteredUsers.value.length;
+    if (paginatedUsers.value.length === 0) return false;
+    return selectedIds.value.length === paginatedUsers.value.length;
 });
 
 const toggleAll = () => {
     if (isAllSelected.value) selectedIds.value = [];
-    else selectedIds.value = filteredUsers.value.map(u => u.id);
+    else selectedIds.value = paginatedUsers.value.map(u => u.id);
 };
 
 const openUserDetails = (user) => { selectedUserDetails.value = user; isUserDetailsModalOpen.value = true; };
@@ -166,7 +184,7 @@ const submitBulkDelete = () => { bulkDeleteForm.post(route('admin.users.bulk-des
 const openRoleModal = (user) => {
     selectedUserForRole.value = user;
     roleForm.role = user.role;
-    roleForm.department_id = user.department_id || ''; // Load existing department if they have one
+    roleForm.department_id = user.department_id || ''; 
     roleForm.password = ''; 
     roleForm.clearErrors();
     isRoleModalOpen.value = true;
@@ -251,7 +269,19 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 <template>
     <Head title="System Directory" />
     <AuthenticatedLayout>
-        
+        <!-- MOBILE FLOATING FAB: Placed perfectly above chat widget, with black/white borders -->
+        <div class="md:hidden fixed bottom-[150px] right-4 z-[999] flex flex-col gap-2 items-center pointer-events-none">
+            <button v-if="mainTab === 'users'" @click="isCreateModalOpen = true" class="pointer-events-auto flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-500 rounded-full border border-black dark:border-white shadow-[0_8px_30px_rgba(0,0,0,0.15)] transition-transform active:scale-95">
+                <Plus class="w-5 h-5" />
+            </button>
+            <button v-if="mainTab === 'departments'" @click="isCreateDeptModalOpen = true" class="pointer-events-auto flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 text-purple-600 dark:text-purple-400 rounded-full border border-black dark:border-white shadow-[0_8px_30px_rgba(0,0,0,0.15)] transition-transform active:scale-95">
+                <Plus class="w-5 h-5" />
+            </button>
+            <button @click="exportToExcel" class="pointer-events-auto flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 rounded-full border border-black dark:border-white shadow-[0_8px_30px_rgba(0,0,0,0.15)] transition-transform active:scale-95">
+                <Download class="w-4 h-4" />
+            </button>
+        </div>
+
         <div class="mb-3 flex justify-between items-center max-w-7xl mx-auto px-3 sm:px-6">
              <div class="flex items-center gap-3">
                  <div>
@@ -261,27 +291,27 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
              </div>
         </div>
 
-        <div class="max-w-7xl mx-auto px-3 sm:px-6 flex flex-col md:flex-row gap-3 md:gap-5 items-start">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 flex flex-col md:flex-row gap-3 md:gap-5 items-start relative">
             
-            <!-- FLOATING ACTIONS SIDEBAR -->
-            <aside class="w-full md:w-12 shrink-0 flex flex-row md:flex-col gap-2 justify-end md:justify-start sticky top-2 md:top-6 z-10 order-1 mb-4 md:mb-0">
-                <button v-if="mainTab === 'users'" @click="isCreateModalOpen = true" class="group relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-blue-600 hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
-                    <Plus class="w-4 h-4 sm:w-5 sm:h-5" />
-                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg z-[9999]">New User</span>
+            <!-- DESKTOP FLOATING ACTIONS SIDEBAR -->
+            <aside class="hidden md:flex w-12 shrink-0 flex-col gap-3 sticky top-6 z-10 order-1">
+                <button v-if="mainTab === 'users'" @click="isCreateModalOpen = true" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-blue-600 hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
+                    <Plus class="w-5 h-5" />
+                    <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">New User</span>
                 </button>
 
-                <button v-if="mainTab === 'departments'" @click="isCreateDeptModalOpen = true" class="group relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-purple-600 hover:border-purple-600 hover:bg-purple-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
-                    <Plus class="w-4 h-4 sm:w-5 sm:h-5" />
-                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg z-[9999]">Add Dept</span>
+                <button v-if="mainTab === 'departments'" @click="isCreateDeptModalOpen = true" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-purple-600 hover:border-purple-600 hover:bg-purple-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
+                    <Plus class="w-5 h-5" />
+                    <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Add Dept</span>
                 </button>
 
-                <button @click="exportToExcel" class="group relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
-                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg z-[9999]">Export Excel</span>
+                <button @click="exportToExcel" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
+                    <Download class="w-5 h-5" />
+                    <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Export Excel</span>
                 </button>
             </aside>
 
-            <div class="flex-1 min-w-0 w-full order-2">
+            <div class="flex-1 min-w-0 w-full order-2 pb-24 md:pb-6">
                 
                 <div class="flex gap-4 border-b border-slate-200 dark:border-slate-700 mb-4 overflow-x-auto no-scrollbar pb-1">
                     <button @click="mainTab = 'users'" class="pb-1.5 text-sm sm:text-base font-black border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap uppercase tracking-widest" :class="mainTab === 'users' ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'">
@@ -297,38 +327,71 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                 <!-- ========================================== -->
                 <div v-if="mainTab === 'users'" class="animate-in fade-in slide-in-from-bottom-2 duration-300">
                     
-                    <div class="bg-white dark:bg-slate-800 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm mb-4 flex flex-col lg:flex-row gap-2.5 items-stretch lg:items-center">
-                        <div class="relative flex-1 min-w-[200px]">
+                    <!-- RESPONSIVE SEARCH & FILTER CARD -->
+                    <div class="bg-white dark:bg-slate-800 p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm mb-4 flex flex-row sm:flex-col lg:flex-row gap-1.5 sm:gap-2.5 items-center sm:items-stretch lg:items-center min-w-0">
+                        
+                        <!-- Search (Common to both) -->
+                        <div class="relative flex-1 min-w-[120px] sm:min-w-[200px]">
                             <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                                <svg class="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                                <Search class="h-3.5 w-3.5 text-slate-400" />
                             </div>
-                            <input v-model="searchQuery" type="text" placeholder="Search by name, email, or ID..." class="w-full h-8 pl-8 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs shadow-sm transition-colors" />
+                            <input v-model="searchQuery" type="text" placeholder="Search accounts..." class="w-full h-8 pl-8 rounded sm:rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 sm:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 sm:focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs shadow-sm transition-colors" />
                         </div>
 
-                        <div class="grid grid-cols-2 sm:flex sm:flex-row gap-2 w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
-                            <div v-if="availablePrograms.length > 0" class="col-span-2 sm:col-span-1 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[140px]">
-                                <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                                <select v-model="filterProgram" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
-                                    <option value="all">All Programs</option>
-                                    <option v-for="prog in availablePrograms" :key="prog" :value="prog">{{ prog }}</option>
+                        <!-- MOBILE FILTERS (Icon Only, Overlay Select) -->
+                        <div class="flex sm:hidden flex-row gap-1.5 shrink-0">
+                            <div v-if="availablePrograms.length > 0" class="relative shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center w-8 h-8 shadow-sm transition">
+                                <BookOpen class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                                <select v-model="filterProgram" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]" title="Filter by Program">
+                                    <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Programs</option>
+                                    <option v-for="prog in availablePrograms" :key="prog" :value="prog" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ prog }}</option>
+                                </select>
+                            </div>
+                            
+                            <div v-if="availableYears.length > 0" class="relative shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center w-8 h-8 shadow-sm transition">
+                                <Calendar class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                                <select v-model="filterYear" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]" title="Filter by Year">
+                                    <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Batches</option>
+                                    <option v-for="year in availableYears" :key="year" :value="year" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ year }} Batches</option>
+                                </select>
+                            </div>
+
+                            <div class="relative shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center w-8 h-8 shadow-sm transition">
+                                <Filter class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                                <select v-model="sortBy" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]" title="Sort Users">
+                                    <option value="newest" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Newest First</option>
+                                    <option value="oldest" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Oldest First</option>
+                                    <option value="name_asc" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Name (A-Z)</option>
+                                    <option value="name_desc" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Name (Z-A)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- DESKTOP FILTERS (Expanded with Text) -->
+                        <div class="hidden sm:grid grid-cols-2 lg:flex lg:flex-row gap-2 w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
+                            <div v-if="availablePrograms.length > 0" class="col-span-2 lg:col-span-1 shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[140px]">
+                                <BookOpen class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <select v-model="filterProgram" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                                    <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Programs</option>
+                                    <option v-for="prog in availablePrograms" :key="prog" :value="prog" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ prog }}</option>
                                 </select>
                             </div>
                             
                             <div v-if="availableYears.length > 0" class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[120px]">
-                                <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                                <select v-model="filterYear" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
-                                    <option value="all">All Years</option>
-                                    <option v-for="year in availableYears" :key="year" :value="year">{{ year }} Batches</option>
+                                <Calendar class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <select v-model="filterYear" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                                    <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Batches</option>
+                                    <option v-for="year in availableYears" :key="year" :value="year" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ year }} Batches</option>
                                 </select>
                             </div>
                             
-                            <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[130px]" :class="{'col-span-2': availablePrograms.length === 0 && availableYears.length === 0}">
-                                <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
-                                <select v-model="sortBy" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
-                                    <option value="newest">Newest First</option>
-                                    <option value="oldest">Oldest First</option>
-                                    <option value="name_asc">Name (A-Z)</option>
-                                    <option value="name_desc">Name (Z-A)</option>
+                            <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[130px]" :class="{'col-span-2 lg:col-span-1': availablePrograms.length === 0 && availableYears.length === 0}">
+                                <Filter class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <select v-model="sortBy" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                                    <option value="newest" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Newest First</option>
+                                    <option value="oldest" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Oldest First</option>
+                                    <option value="name_asc" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Name (A-Z)</option>
+                                    <option value="name_desc" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Name (Z-A)</option>
                                 </select>
                             </div>
                         </div>
@@ -352,10 +415,10 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             <span class="text-[10px] font-black uppercase tracking-widest text-blue-700 dark:text-blue-400 mr-auto">{{ selectedIds.length }} Selected</span>
                             
                             <button v-if="userRoleTab === 'archive'" @click="openBulkSuspend('reactivate')" class="text-[9px] bg-white dark:bg-slate-800 text-emerald-600 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded uppercase tracking-widest font-black shadow-sm hover:bg-emerald-50 transition">
-                                Reactivate All
+                                Reactivate
                             </button>
                             <button v-if="userRoleTab !== 'archive'" @click="openBulkSuspend('suspend')" class="text-[9px] bg-white dark:bg-slate-800 text-red-600 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded uppercase tracking-widest font-black shadow-sm hover:bg-red-50 transition">
-                                Suspend All
+                                Suspend
                             </button>
                             <button @click="openBulkDelete()" class="text-[9px] bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded uppercase tracking-widest font-black shadow-sm transition">
                                 Delete All
@@ -369,13 +432,13 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     </div>
 
                     <!-- User Table -->
-                    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-8">
+                    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden mb-4">
                         <div class="overflow-x-auto no-scrollbar">
                             <table class="w-full text-left text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
                                 <thead class="text-[9px] uppercase font-bold text-slate-400 bg-slate-50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-700">
                                     <tr>
                                         <th class="px-3 py-2 w-8">
-                                            <input type="checkbox" :checked="isAllSelected && filteredUsers.length > 0" @change="toggleAll" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm" />
+                                            <input type="checkbox" :checked="isAllSelected && paginatedUsers.length > 0" @change="toggleAll" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm" />
                                         </th>
                                         <th class="px-2 py-2 w-full sm:w-auto">User Details</th>
                                         <th class="px-2 py-2 hidden sm:table-cell">Role / Dept</th>
@@ -384,38 +447,34 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
-                                    <tr v-for="user in filteredUsers" :key="user.id" @click="openUserDetails(user)" class="transition select-none cursor-pointer" :class="selectedIds.includes(user.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'" title="Click to view full profile">
+                                    <!-- CLIENT-SIDE PAGINATION RENDER -->
+                                    <tr v-for="user in paginatedUsers" :key="user.id" @click="openUserDetails(user)" class="transition select-none cursor-pointer group" :class="selectedIds.includes(user.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'" title="Click to view full profile">
                                         
-                                        <!-- FIX: Used click.stop to prevent row click from firing when ticking the checkbox -->
-                                        <td class="px-3 py-1.5" @click.stop>
-                                            <input type="checkbox" :checked="selectedIds.includes(user.id)" @change="toggleSelection(user.id)" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm" />
+                                        <td class="px-2 py-1 w-6 sm:px-3 sm:py-1.5 sm:w-8" @click.stop>
+                                            <input type="checkbox" :checked="selectedIds.includes(user.id)" @change="toggleSelection(user.id)" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm w-3 h-3 sm:w-4 sm:h-4" />
                                         </td>
 
-                                        <td class="px-2 py-1.5 flex flex-col sm:table-cell">
+                                        <td class="px-1 py-1 sm:px-2 sm:py-1.5 w-full sm:w-auto">
                                             <div class="flex items-center gap-2">
                                                 <div class="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 shrink-0 overflow-hidden text-slate-500 dark:text-slate-400 flex items-center justify-center text-[10px] font-black">
                                                     <img v-if="user.avatar" :src="user.avatar" class="w-full h-full object-cover" />
                                                     <span v-else>{{ user.name.charAt(0) }}</span>
                                                 </div>
-                                                <div class="min-w-0">
-                                                    <div class="font-bold text-slate-900 dark:text-white truncate max-w-[150px] sm:max-w-xs leading-tight text-[10px] sm:text-xs">
-                                                        {{ user.name }} <span v-if="user.id === $page.props.auth.user.id" class="ml-1 text-[8px] bg-blue-100 text-blue-700 px-1 py-0.5 rounded font-black uppercase">(You)</span>
+                                                <div class="min-w-0 flex-1 flex flex-col justify-center">
+                                                    <div class="flex items-center gap-1.5 truncate">
+                                                        <span class="font-bold text-slate-900 dark:text-white truncate text-[10px] sm:text-xs leading-none">{{ user.name }}</span>
+                                                        <span v-if="user.id === $page.props.auth.user.id" class="hidden sm:inline-block ml-1 text-[8px] bg-blue-100 text-blue-700 px-1 py-0.5 rounded font-black uppercase leading-none">(You)</span>
+                                                        <span class="sm:hidden text-[7px] font-black uppercase tracking-widest px-1 py-0.5 rounded leading-none shrink-0" :class="user.role === 'admin' ? 'bg-purple-100 text-purple-700' : user.role === 'dean' ? 'bg-amber-100 text-amber-700' : user.role === 'teacher' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'">{{ user.role }}</span>
+                                                        <span v-if="user.status === 'suspended'" class="sm:hidden w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>
                                                     </div>
-                                                    <div class="text-[8px] sm:text-[9px] mt-0.5 truncate max-w-[150px] sm:max-w-xs leading-tight opacity-80 text-blue-600 dark:text-blue-400">{{ user.email }}</div>
+                                                    <div class="text-[8px] sm:text-[9px] text-slate-500 truncate leading-none mt-0.5">{{ user.email }}</div>
                                                 </div>
-                                            </div>
-                                            <div class="sm:hidden mt-1.5 flex gap-1 items-center flex-wrap">
-                                                <span class="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded" :class="user.role === 'admin' ? 'bg-purple-100 text-purple-700' : user.role === 'dean' ? 'bg-amber-100 text-amber-700' : user.role === 'teacher' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'">{{ user.role }}</span>
-                                                <span v-if="user.status === 'suspended'" class="text-[8px] font-black uppercase tracking-widest bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Suspended</span>
-                                            </div>
-                                            <div v-if="user.status === 'suspended'" class="mt-1 text-[9px] text-red-600 dark:text-red-400 font-medium max-w-[150px] sm:max-w-xs truncate bg-red-50 dark:bg-red-900/10 px-1 py-0.5 rounded inline-block border border-red-100 dark:border-red-900/30">
-                                                Reason: {{ user.suspension_reason }}
                                             </div>
                                         </td>
                                         
                                         <td class="px-2 py-1.5 hidden sm:table-cell align-top">
                                             <span class="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded inline-block mb-1 border"
-                                                :class="user.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : user.role === 'dean' ? 'bg-amber-50 text-amber-700 border-amber-200' : user.role === 'teacher' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-600 border-slate-200'">
+                                                :class="user.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200 dark:border-purple-800 dark:bg-purple-900/30 dark:text-purple-400' : user.role === 'dean' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-400' : user.role === 'teacher' ? 'bg-blue-50 text-blue-700 border-blue-200 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-slate-50 text-slate-600 border-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400'">
                                                 {{ user.role }}
                                             </span>
                                             <div v-if="user.department" class="text-[8px] font-bold text-slate-500 uppercase tracking-widest truncate max-w-[150px]"><Building2 class="w-3 h-3 inline pb-0.5"/> {{ user.department.name }}</div>
@@ -427,36 +486,37 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                             <span v-else class="text-[9px] font-black uppercase tracking-widest text-red-600 flex items-center gap-1" :title="user.suspension_reason"><div class="w-1.5 h-1.5 rounded-full bg-red-500"></div> Suspended</span>
                                         </td>
                                         
-                                        <!-- FIX: Added click.stop here to prevent buttons from firing the row modal popup -->
-                                        <td class="px-2 py-1.5 text-right align-middle" @click.stop>
-                                            <div class="flex items-center justify-end gap-1 flex-wrap sm:flex-nowrap min-w-[80px]">
-                                                <button @click="openResetPasswordModal(user)" class="p-1.5 text-indigo-400 hover:text-indigo-600 bg-white hover:bg-indigo-50 dark:bg-transparent dark:hover:bg-indigo-900/30 rounded transition shadow-sm border border-transparent hover:border-indigo-200 dark:hover:border-indigo-800" title="Reset Password">
-                                                    <Key class="w-3.5 h-3.5" />
+                                        <td class="px-1 py-1 sm:px-2 sm:py-1.5 text-right align-middle" @click.stop>
+                                            <div class="flex items-center justify-end gap-1 flex-nowrap min-w-[80px]">
+                                                <button @click="openResetPasswordModal(user)" class="p-1 sm:p-1.5 text-indigo-400 hover:text-indigo-600 bg-white hover:bg-indigo-50 dark:bg-transparent dark:hover:bg-indigo-900/30 rounded transition shadow-sm border border-transparent hover:border-indigo-200 dark:hover:border-indigo-800" title="Reset Password">
+                                                    <Key class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                                                 </button>
 
-                                                <button @click="openRoleModal(user)" class="p-1.5 text-blue-400 hover:text-blue-600 bg-white hover:bg-blue-50 dark:bg-transparent dark:hover:bg-blue-900/30 rounded transition shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-800" title="Change User Role">
-                                                    <UserCog class="w-3.5 h-3.5" />
+                                                <button @click="openRoleModal(user)" class="p-1 sm:p-1.5 text-blue-400 hover:text-blue-600 bg-white hover:bg-blue-50 dark:bg-transparent dark:hover:bg-blue-900/30 rounded transition shadow-sm border border-transparent hover:border-blue-200 dark:hover:border-blue-800" title="Change User Role">
+                                                    <UserCog class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                                                 </button>
 
-                                                <button @click="openImpersonateModal(user)" class="flex items-center gap-1 rounded bg-amber-50 dark:bg-amber-900/20 px-1.5 py-1 text-[9px] font-bold text-amber-600 dark:text-amber-400 transition hover:bg-amber-100 dark:hover:bg-amber-900/40" title="Login as this user">
-                                                    <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                                                    <span class="hidden lg:inline uppercase tracking-widest">Impersonate</span>
+                                                <button @click="openImpersonateModal(user)" class="flex items-center gap-1 rounded bg-amber-50 dark:bg-amber-900/20 p-1 sm:px-1.5 sm:py-1 text-amber-600 dark:text-amber-400 transition hover:bg-amber-100 dark:hover:bg-amber-900/40" title="Login as this user">
+                                                    <svg class="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                                    <span class="hidden lg:inline text-[9px] font-bold uppercase tracking-widest">Impersonate</span>
                                                 </button>
 
-                                                <button v-if="user.status === 'suspended'" @click="openBulkSuspend('reactivate', user.id)" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[9px] uppercase tracking-widest font-bold shadow-sm transition">
-                                                    Unsuspend
+                                                <button v-if="user.status === 'suspended'" @click="openBulkSuspend('reactivate', user.id)" class="p-1 sm:px-2 sm:py-1 bg-emerald-50 sm:bg-emerald-600 hover:bg-emerald-100 sm:hover:bg-emerald-500 text-emerald-600 sm:text-white rounded transition border border-emerald-100 sm:border-transparent dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400 shadow-sm" title="Unsuspend">
+                                                    <svg class="w-3 h-3 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                                    <span class="hidden sm:inline text-[9px] uppercase tracking-widest font-bold">Unsuspend</span>
                                                 </button>
-                                                <button v-else @click="openBulkSuspend('suspend', user.id)" class="text-red-500 hover:text-red-700 text-[9px] font-bold bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded border border-red-100 dark:border-red-900/30 uppercase tracking-widest transition shadow-sm">
-                                                    Suspend
+                                                <button v-else @click="openBulkSuspend('suspend', user.id)" class="p-1 sm:px-2 sm:py-1 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-500 hover:text-red-700 rounded border border-red-100 dark:border-red-900/30 transition shadow-sm" title="Suspend">
+                                                    <ShieldAlert class="w-3 h-3 sm:hidden" />
+                                                    <span class="hidden sm:inline text-[9px] font-bold uppercase tracking-widest">Suspend</span>
                                                 </button>
 
-                                                <button @click="openBulkDelete(user.id)" class="p-1.5 text-slate-400 hover:text-red-600 bg-white hover:bg-red-50 dark:bg-transparent dark:hover:bg-red-900/30 rounded transition shadow-sm border border-transparent hover:border-red-200 dark:hover:border-red-800" title="Permanently Delete Account">
-                                                    <Trash2 class="w-3.5 h-3.5" />
+                                                <button @click="openBulkDelete(user.id)" class="p-1 sm:p-1.5 text-slate-400 hover:text-red-600 bg-white hover:bg-red-50 dark:bg-transparent dark:hover:bg-red-900/30 rounded transition shadow-sm border border-transparent hover:border-red-200 dark:hover:border-red-800" title="Permanently Delete Account">
+                                                    <Trash2 class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                                                 </button>
                                             </div>
                                         </td>
                                     </tr>
-                                    <tr v-if="filteredUsers.length === 0">
+                                    <tr v-if="paginatedUsers.length === 0">
                                         <td colspan="4" class="px-2 py-8 text-center text-slate-400 dark:text-slate-500 text-[10px]">
                                             <div class="font-black uppercase tracking-widest mb-1 text-slate-300 dark:text-slate-600">No Records Found</div>
                                             <div class="font-medium">Try adjusting your search or filters.</div>
@@ -466,20 +526,38 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             </table>
                         </div>
                         
-                        <div v-if="!Array.isArray(users) && users.links" class="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 sm:px-6">
+                        <!-- CLIENT-SIDE PAGINATION UI -->
+                        <div v-if="totalPages > 0" class="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 sm:px-6 bg-slate-50 dark:bg-slate-900/50 shrink-0">
+                            <!-- Mobile Pagination -->
                             <div class="flex flex-1 justify-between sm:hidden">
-                                <Component :is="users.prev_page_url ? 'Link' : 'span'" :href="users.prev_page_url || '#'" preserve-state preserve-scroll class="relative inline-flex items-center px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50" :class="{'opacity-50 cursor-not-allowed': !users.prev_page_url}">Previous</Component>
-                                <Component :is="users.next_page_url ? 'Link' : 'span'" :href="users.next_page_url || '#'" preserve-state preserve-scroll class="relative inline-flex items-center px-4 py-2 ml-3 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50" :class="{'opacity-50 cursor-not-allowed': !users.next_page_url}">Next</Component>
+                                <button @click="currentPage--" :disabled="currentPage === 1" class="relative inline-flex items-center px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition">
+                                    Previous
+                                </button>
+                                <button @click="currentPage++" :disabled="currentPage === totalPages" class="relative inline-flex items-center px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition">
+                                    Next
+                                </button>
                             </div>
+                            <!-- Desktop Pagination -->
                             <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-                                <div><p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Showing <span class="font-black">{{ users.from || 0 }}</span> to <span class="font-black">{{ users.to || 0 }}</span> of <span class="font-black">{{ users.total || 0 }}</span> users</p></div>
+                                <div>
+                                    <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">
+                                        Showing <span class="font-black">{{ filteredUsers.length > 0 ? ((currentPage - 1) * itemsPerPage) + 1 : 0 }}</span> to 
+                                        <span class="font-black">{{ Math.min(currentPage * itemsPerPage, filteredUsers.length) }}</span> of 
+                                        <span class="font-black">{{ filteredUsers.length }}</span> users
+                                    </p>
+                                </div>
                                 <div>
                                     <nav class="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-                                        <Link v-for="(link, k) in users.links" :key="k" :href="link.url || '#'" preserve-state preserve-scroll v-html="link.label" class="relative inline-flex items-center px-3 py-1.5 text-[10px] font-bold ring-1 ring-inset ring-slate-300 focus:z-20 focus:outline-offset-0" :class="link.active ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' : 'text-slate-500 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'"></Link>
+                                        <button v-for="page in totalPages" :key="page" @click="currentPage = page"
+                                                class="relative inline-flex items-center px-3 py-1.5 text-[10px] font-bold ring-1 ring-inset ring-slate-300 dark:ring-slate-600 focus:z-20 focus:outline-offset-0 transition"
+                                                :class="page === currentPage ? 'z-10 bg-blue-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600' : 'text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700'">
+                                            {{ page }}
+                                        </button>
                                     </nav>
                                 </div>
                             </div>
                         </div>
+
                     </div>
                 </div>
 
@@ -494,7 +572,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <tr>
                                         <th class="px-4 py-2 w-16">ID</th>
                                         <th class="px-4 py-2 w-full">Department Name</th>
-                                        <!-- FIX: Added Assigned Dean Column -->
                                         <th class="px-4 py-2 hidden sm:table-cell">Assigned Dean(s)</th>
                                         <th class="px-4 py-2 text-right">Actions</th>
                                     </tr>
@@ -504,7 +581,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                         <td class="px-4 py-2 font-mono font-bold text-slate-400">#{{ dept.id }}</td>
                                         <td class="px-4 py-2 font-black text-slate-900 dark:text-white text-xs">{{ dept.name }}</td>
                                         
-                                        <!-- FIX: Displays the associated Deans -->
                                         <td class="px-4 py-2 hidden sm:table-cell">
                                             <div v-if="dept.users && dept.users.length > 0" class="flex flex-wrap gap-1">
                                                 <span v-for="dean in dept.users" :key="dean.id" class="text-[9px] font-bold uppercase tracking-widest bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800">
@@ -523,7 +599,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <tr v-if="!departments || departments.length === 0">
                                         <td colspan="4" class="px-4 py-8 text-center text-slate-400 dark:text-slate-500 text-[10px]">
                                             <div class="font-black uppercase tracking-widest mb-1 text-slate-300 dark:text-slate-600">No Departments Established</div>
-                                            <div class="font-bold">Click the purple button above to create one.</div>
+                                            <div class="font-bold">Click the purple button below to create one.</div>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -625,19 +701,19 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <div class="grid grid-cols-2 gap-3">
                             <div>
                                 <InputLabel value="Account Role *" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                <select v-model="form.role" :class="inputClass" class="cursor-pointer font-bold uppercase tracking-widest" required>
-                                    <option value="student">Student</option>
-                                    <option value="teacher">Teacher</option>
-                                    <option value="dean">Dean (Oversight)</option>
-                                    <option value="admin">Administrator</option>
+                                <select v-model="form.role" :class="inputClass" class="cursor-pointer font-bold uppercase tracking-widest dark:[color-scheme:dark]" required>
+                                    <option value="student" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Student</option>
+                                    <option value="teacher" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Teacher</option>
+                                    <option value="dean" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Dean (Oversight)</option>
+                                    <option value="admin" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Administrator</option>
                                 </select>
                             </div>
                             
                             <div v-if="form.role === 'teacher' || form.role === 'dean'">
                                 <InputLabel value="Assign Department *" class="text-[8px] font-bold uppercase text-purple-500 mb-0.5" />
-                                <select v-model="form.department_id" :class="inputClass" class="cursor-pointer border-purple-200 dark:border-purple-800 focus:ring-purple-500" required>
-                                    <option value="" disabled>Select Dept...</option>
-                                    <option v-for="dept in departments" :key="dept.id" :value="dept.id">{{ dept.name }}</option>
+                                <select v-model="form.department_id" :class="inputClass" class="cursor-pointer border-purple-200 dark:border-purple-800 focus:ring-purple-500 dark:[color-scheme:dark]" required>
+                                    <option value="" disabled class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Select Dept...</option>
+                                    <option v-for="dept in departments" :key="dept.id" :value="dept.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ dept.name }}</option>
                                 </select>
                                 <InputError :message="form.errors.department_id" class="mt-1 text-[9px]" />
                             </div>
@@ -655,14 +731,14 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div v-if="form.role === 'student'">
                                 <InputLabel value="Program / Course" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                <select v-model="form.program" :class="inputClass" required class="cursor-pointer">
-                                    <option value="" disabled>Select a Program...</option>
-                                    <option value="BS Information Technology">BS Information Technology</option>
-                                    <option value="BS Computer Science">BS Computer Science</option>
-                                    <option value="BS Education">BS Education</option>
-                                    <option value="BS Business Administration">BS Business Administration</option>
-                                    <option value="BS Accountancy">BS Accountancy</option>
-                                    <option value="Other">Other</option>
+                                <select v-model="form.program" :class="inputClass" required class="cursor-pointer dark:[color-scheme:dark]">
+                                    <option value="" disabled class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Select a Program...</option>
+                                    <option value="BS Information Technology" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">BS Information Technology</option>
+                                    <option value="BS Computer Science" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">BS Computer Science</option>
+                                    <option value="BS Education" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">BS Education</option>
+                                    <option value="BS Business Administration" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">BS Business Administration</option>
+                                    <option value="BS Accountancy" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">BS Accountancy</option>
+                                    <option value="Other" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Other</option>
                                 </select>
                                 <InputError :message="form.errors.program" class="mt-1 text-[9px]" />
                             </div>
@@ -861,21 +937,20 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <div class="grid grid-cols-2 gap-3">
                         <div class="col-span-2">
                             <InputLabel value="Select New Role" class="text-[9px] font-bold uppercase text-slate-500 mb-1" />
-                            <select v-model="roleForm.role" :class="inputClass" class="cursor-pointer font-bold uppercase tracking-widest">
-                                <option value="student">Student</option>
-                                <option value="teacher">Teacher</option>
-                                <option value="dean">Dean</option>
-                                <option value="admin">Administrator</option>
+                            <select v-model="roleForm.role" :class="inputClass" class="cursor-pointer font-bold uppercase tracking-widest dark:[color-scheme:dark]">
+                                <option value="student" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Student</option>
+                                <option value="teacher" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Teacher</option>
+                                <option value="dean" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Dean</option>
+                                <option value="admin" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Administrator</option>
                             </select>
                             <InputError :message="roleForm.errors.role" class="mt-1 text-[9px]" />
                         </div>
                         
-                        <!-- FIX: Added Department Dropdown to Role Update Modal -->
                         <div v-if="roleForm.role === 'teacher' || roleForm.role === 'dean'" class="col-span-2">
                             <InputLabel value="Assign Department *" class="text-[9px] font-bold uppercase text-purple-500 mb-1" />
-                            <select v-model="roleForm.department_id" :class="inputClass" class="cursor-pointer border-purple-200 focus:ring-purple-500" required>
-                                <option value="" disabled>Select Dept...</option>
-                                <option v-for="dept in departments" :key="dept.id" :value="dept.id">{{ dept.name }}</option>
+                            <select v-model="roleForm.department_id" :class="inputClass" class="cursor-pointer border-purple-200 dark:border-slate-700 focus:ring-purple-500 dark:[color-scheme:dark]" required>
+                                <option value="" disabled class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Select Dept...</option>
+                                <option v-for="dept in departments" :key="dept.id" :value="dept.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ dept.name }}</option>
                             </select>
                             <InputError :message="roleForm.errors.department_id" class="mt-1 text-[9px]" />
                         </div>

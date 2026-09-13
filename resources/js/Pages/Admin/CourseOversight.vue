@@ -7,6 +7,7 @@ import { Head, router, useForm, Link, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
+import { Plus, Download, Search, Filter, BookOpen, Calendar, Trash2, ShieldAlert, Users } from 'lucide-vue-next';
 
 const props = defineProps({
     courses: Array,
@@ -39,7 +40,7 @@ const isBulkDeleteModalOpen = ref(false);
 const isBulkStatusModalOpen = ref(false);
 const bulkStatusForm = useForm({ password: '', course_ids: [], action: '' });
 
-// NEW: Enter Course Password Security Modal Logic
+// Enter Course Password Security Modal Logic
 const isEnterModalOpen = ref(false);
 const targetCourseId = ref(null);
 const enterForm = useForm({ password: '' });
@@ -135,7 +136,7 @@ const filteredCourses = computed(() => {
 });
 
 watch(activeTab, () => { selectedIds.value = []; });
-watch([selectedTeacherFilter, selectedYearFilter], () => { selectedIds.value = []; });
+watch([selectedTeacherFilter, selectedYearFilter, searchQuery, sortOrder], () => { selectedIds.value = []; });
 
 const toggleSelection = (id) => {
     if (selectedIds.value.includes(id)) selectedIds.value = selectedIds.value.filter(i => i !== id);
@@ -238,7 +239,7 @@ const submitBulkStatus = () => {
     });
 };
 
-// NEW: Enter Course Security Check
+// Enter Course Security Check
 const openEnterModal = (courseId) => {
     targetCourseId.value = courseId;
     enterForm.password = '';
@@ -298,6 +299,18 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
     <Head title="Course Oversight" />
     <AuthenticatedLayout>
         
+        <!-- MOBILE FLOATING FAB: Placed perfectly above chat widget, with black/white borders & Tooltips -->
+        <div class="md:hidden fixed bottom-[150px] right-4 z-[999] flex flex-col gap-2 items-center pointer-events-none">
+            <button @click="isCreateModalOpen = true" class="group relative pointer-events-auto flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-500 rounded-full border border-black dark:border-white shadow-[0_8px_30px_rgba(0,0,0,0.15)] transition-transform active:scale-95">
+                <Plus class="w-5 h-5" />
+                <span class="absolute right-full mr-2 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Batch Create</span>
+            </button>
+            <button @click="exportToExcel" class="group relative pointer-events-auto flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 rounded-full border border-black dark:border-white shadow-[0_8px_30px_rgba(0,0,0,0.15)] transition-transform active:scale-95">
+                <Download class="w-4 h-4" />
+                <span class="absolute right-full mr-2 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Export Excel</span>
+            </button>
+        </div>
+
         <div class="mb-3 flex justify-between items-center max-w-7xl mx-auto px-3 sm:px-6">
              <div class="flex items-center gap-3">
                  <div>
@@ -309,55 +322,94 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
         <div class="max-w-7xl mx-auto px-3 sm:px-6 flex flex-col md:flex-row gap-3 md:gap-5 items-start">
             
-            <aside class="w-full md:w-12 shrink-0 flex flex-row md:flex-col gap-2 justify-end md:justify-start sticky top-2 md:top-6 z-10 order-1 mb-4 md:mb-0">
-                <button @click="isCreateModalOpen = true" class="group relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-blue-600 hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
-                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Batch Create</span>
+            <aside class="hidden md:flex w-12 shrink-0 flex-col gap-3 sticky top-6 z-10 order-1">
+                <button @click="isCreateModalOpen = true" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-blue-600 hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
+                    <Plus class="w-5 h-5" />
+                    <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Batch Create</span>
                 </button>
 
-                <button @click="exportToExcel" class="group relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
-                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 01-2 2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                    <span class="absolute bottom-full mb-2 md:bottom-auto md:left-full md:ml-3 md:mb-0 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Export Excel</span>
+                <button @click="exportToExcel" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border-2 border-slate-200 dark:border-slate-700 text-emerald-600 hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 transition shadow-sm focus:outline-none shrink-0">
+                    <Download class="w-5 h-5" />
+                    <span class="absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Export Excel</span>
                 </button>
             </aside>
 
-            <div class="flex-1 min-w-0 w-full order-2">
-                <!-- COMPACT FILTERS -->
-                <div class="flex flex-col lg:flex-row gap-2 mb-3">
-                    <div class="relative flex-1">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg class="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            <div class="flex-1 min-w-0 w-full order-2 pb-24 md:pb-6">
+                
+                <!-- RESPONSIVE SEARCH & FILTER CARD -->
+                <div class="bg-white dark:bg-slate-800 p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm mb-4 flex flex-row sm:flex-col lg:flex-row gap-1.5 sm:gap-2.5 items-center sm:items-stretch lg:items-center min-w-0">
+                    
+                    <!-- Search -->
+                    <div class="relative flex-1 min-w-[120px] sm:min-w-[200px]">
+                        <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                            <Search class="h-3.5 w-3.5 text-slate-400" />
                         </div>
-                        <input v-model="searchQuery" type="text" placeholder="Search courses..." class="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 transition shadow-sm" />
+                        <input v-model="searchQuery" type="text" placeholder="Search courses..." class="w-full h-8 pl-8 rounded sm:rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 sm:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 sm:focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs shadow-sm transition-colors" />
                     </div>
 
-                    <div class="flex gap-2 w-full lg:w-auto overflow-x-auto no-scrollbar pb-1 lg:pb-0">
-                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[110px]">
-                            <svg class="w-3 h-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                            <select v-model="selectedTeacherFilter" class="bg-transparent border-none text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
-                                <option value="all">All Teachers</option>
-                                <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
+                    <!-- MOBILE FILTERS (Icon Only, Overlay Select, With Tooltips) -->
+                    <div class="flex sm:hidden flex-row gap-1.5 shrink-0">
+                        <div class="relative shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center w-8 h-8 shadow-sm transition group hover:bg-slate-50 dark:hover:bg-slate-700">
+                            <Users class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                            <select v-model="selectedTeacherFilter" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]">
+                                <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Instructors</option>
+                                <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ teacher.name }}</option>
+                            </select>
+                            <span class="absolute bottom-full right-0 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Instructor</span>
+                        </div>
+                        
+                        <div class="relative shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center w-8 h-8 shadow-sm transition group hover:bg-slate-50 dark:hover:bg-slate-700">
+                            <Calendar class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                            <select v-model="selectedYearFilter" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]">
+                                <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Years</option>
+                                <option value="beginner" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">1st Year</option>
+                                <option value="intermediate" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">2nd Year</option>
+                                <option value="advanced" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">3rd Year</option>
+                                <option value="final" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">4th Year</option>
+                            </select>
+                            <span class="absolute bottom-full right-0 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Year Level</span>
+                        </div>
+
+                        <div class="relative shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center w-8 h-8 shadow-sm transition group hover:bg-slate-50 dark:hover:bg-slate-700">
+                            <Filter class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                            <select v-model="sortOrder" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]">
+                                <option value="newest" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Newest First</option>
+                                <option value="oldest" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Oldest First</option>
+                                <option value="students_high" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Most Students</option>
+                                <option value="students_low" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Least Students</option>
+                            </select>
+                            <span class="absolute bottom-full right-0 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Sort</span>
+                        </div>
+                    </div>
+
+                    <!-- DESKTOP FILTERS (Expanded with Text) -->
+                    <div class="hidden sm:grid grid-cols-3 lg:flex lg:flex-row gap-2 w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
+                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[110px]">
+                            <Users class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <select v-model="selectedTeacherFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                                <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Instructors</option>
+                                <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ teacher.name }}</option>
                             </select>
                         </div>
 
-                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[100px]">
-                            <svg class="w-3 h-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z"></path></svg>
-                            <select v-model="selectedYearFilter" class="bg-transparent border-none text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
-                                <option value="all">All Years</option>
-                                <option value="beginner">1st Year</option>
-                                <option value="intermediate">2nd Year</option>
-                                <option value="advanced">3rd Year</option>
-                                <option value="final">4th Year</option>
+                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[100px]">
+                            <Calendar class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <select v-model="selectedYearFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                                <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Years</option>
+                                <option value="beginner" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">1st Year</option>
+                                <option value="intermediate" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">2nd Year</option>
+                                <option value="advanced" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">3rd Year</option>
+                                <option value="final" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">4th Year</option>
                             </select>
                         </div>
 
-                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[110px]">
-                            <svg class="w-3 h-3 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
-                            <select v-model="sortOrder" class="bg-transparent border-none text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0">
-                                <option value="newest">Newest First</option>
-                                <option value="oldest">Oldest First</option>
-                                <option value="students_high">Most Students</option>
-                                <option value="students_low">Least Students</option>
+                        <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[110px]">
+                            <Filter class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <select v-model="sortOrder" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                                <option value="newest" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Newest First</option>
+                                <option value="oldest" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Oldest First</option>
+                                <option value="students_high" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Most Students</option>
+                                <option value="students_low" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Least Students</option>
                             </select>
                         </div>
                     </div>
@@ -480,68 +532,68 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     </div>
                 </div>
 
-                <!-- MOBILE STACKED CARDS VIEW -->
+                <!-- COMPACT MOBILE CARDS VIEW -->
                 <div class="md:hidden flex flex-col gap-2 pb-8">
-                    <div v-for="course in filteredCourses" :key="course.id" class="p-3 flex flex-col gap-3 rounded-lg border shadow-sm transition-colors" :class="selectedIds.includes(course.id) ? 'bg-blue-50/50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-800' : 'bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700'">
-                        <div class="flex items-start gap-3">
-                            <input type="checkbox" :checked="selectedIds.includes(course.id)" @change="toggleSelection(course.id)" class="mt-1 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm shrink-0" />
-                            
-                            <div class="flex items-center gap-2.5 flex-1 min-w-0" @click="toggleSelection(course.id)">
-                                <div v-if="course.thumbnail" class="w-10 h-10 rounded-lg bg-slate-200 shrink-0 overflow-hidden shadow-sm">
-                                    <img :src="course.thumbnail" class="w-full h-full object-cover" />
-                                </div>
-                                <div v-else class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center shrink-0 shadow-sm">
-                                    <span class="text-[10px] font-black uppercase">{{ formatYearLevel(course.difficulty_level).charAt(0) }}Y</span>
-                                </div>
-                                
-                                <div class="flex-1 min-w-0">
-                                    <div class="flex items-center gap-1.5 mb-1">
-                                        <span v-if="course.is_published" class="text-[7px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 shrink-0">Live</span>
-                                        <span v-else class="text-[7px] font-black uppercase tracking-widest bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 shrink-0">Draft</span>
-                                        <div class="font-black text-slate-900 dark:text-white truncate text-xs">{{ course.title }}</div>
-                                    </div>
-                                    <div class="text-[9px] font-bold opacity-80 text-blue-600 dark:text-blue-400 truncate">{{ course.teacher ? course.teacher.name : 'Unassigned' }}</div>
-                                </div>
+                    <div v-for="course in filteredCourses" :key="course.id" class="p-2 sm:p-2.5 flex items-center gap-2.5 rounded-lg border shadow-sm transition-colors" :class="selectedIds.includes(course.id) ? 'bg-blue-50/50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-800' : 'bg-white border-slate-200 dark:bg-slate-800 dark:border-slate-700'">
+                        
+                        <input type="checkbox" :checked="selectedIds.includes(course.id)" @change="toggleSelection(course.id)" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm shrink-0 w-3.5 h-3.5" />
+                        
+                        <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-slate-200 dark:bg-slate-700 shrink-0 overflow-hidden shadow-sm flex items-center justify-center">
+                            <img v-if="course.thumbnail" :src="course.thumbnail" class="w-full h-full object-cover" />
+                            <span v-else class="text-[8px] sm:text-[10px] font-black text-blue-600 dark:text-blue-400">{{ formatYearLevel(course.difficulty_level).charAt(0) }}Y</span>
+                        </div>
+                        
+                        <div class="flex-1 min-w-0 flex flex-col justify-center" @click="toggleSelection(course.id)">
+                            <div class="flex items-center gap-1.5 truncate">
+                                <span v-if="course.is_published" class="text-[6px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 px-1 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 shrink-0">Live</span>
+                                <span v-else class="text-[6px] font-black uppercase tracking-widest bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600 shrink-0">Draft</span>
+                                <span class="font-black text-slate-900 dark:text-white truncate text-[10px] sm:text-[11px] leading-none">{{ course.title }}</span>
+                            </div>
+                            <div class="text-[8px] sm:text-[9px] font-bold text-slate-500 dark:text-slate-400 truncate mt-1">
+                                {{ course.teacher ? course.teacher.name : 'Unassigned' }} &bull; {{ course.enrollments ? course.enrollments.length : 0 }} Studs
                             </div>
                         </div>
 
-                        <div class="flex items-center justify-between mt-1 pt-2 border-t border-slate-100 dark:border-slate-700/50">
-                            <!-- Schedule summary -->
-                            <div class="text-[8px] font-bold text-slate-500 truncate pr-2">
-                                <span v-if="course.days && course.days.length">
-                                    {{ course.days.join(', ') }} &bull; {{ course.start_time ? course.start_time.substring(0,5) : '' }}
-                                </span>
-                                <span v-else class="italic">No Schedule</span>
-                            </div>
+                        <!-- Horizontal Action Buttons with Mobile Tooltips -->
+                        <div class="flex items-center gap-1 sm:gap-1.5 shrink-0 pl-1 border-l border-slate-100 dark:border-slate-700/50">
+                            
+                            <!-- Hide/Restore -->
+                            <button v-if="!hiddenCourses.includes(course.id)" @click="toggleHideSingle(course.id)" class="group relative p-1 sm:p-1.5 text-slate-400 hover:text-slate-700 bg-slate-50 dark:bg-slate-700/50 rounded shadow-sm border border-slate-200 dark:border-slate-600">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0a10.05 10.05 0 013.825-1.542m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0a10.05 10.05 0 013.825-1.542m5.858.908A9.97 9.97 0 0121 12c-1.274-4.057-5.064-7-9.542-7-1.274 0-2.483.253-3.582.71" /></svg>
+                                <span class="absolute bottom-full right-0 mb-1.5 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Hide</span>
+                            </button>
+                            <button v-else @click="toggleHideSingle(course.id)" class="group relative p-1 sm:p-1.5 text-emerald-500 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 rounded shadow-sm border border-emerald-200 dark:border-emerald-800">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                <span class="absolute bottom-full right-0 mb-1.5 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Restore</span>
+                            </button>
 
-                            <!-- Mobile Action Buttons -->
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <button v-if="!hiddenCourses.includes(course.id)" @click="toggleHideSingle(course.id)" class="p-1 text-slate-400 hover:text-slate-700 bg-slate-50 dark:bg-slate-700/50 rounded shadow-sm border border-slate-200 dark:border-slate-600" title="Hide">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0a10.05 10.05 0 013.825-1.542m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.29 3.29m0 0a10.05 10.05 0 013.825-1.542m5.858.908A9.97 9.97 0 0121 12c-1.274-4.057-5.064-7-9.542-7-1.274 0-2.483.253-3.582.71" /></svg>
-                                </button>
-                                <button v-else @click="toggleHideSingle(course.id)" class="p-1 text-emerald-500 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 rounded shadow-sm border border-emerald-200 dark:border-emerald-800" title="Restore">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                                </button>
+                            <!-- Enter -->
+                            <button @click="openEnterModal(course.id)" class="group relative p-1 sm:p-1.5 text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 rounded border border-blue-200 dark:border-blue-800 shadow-sm">
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                <span class="absolute bottom-full right-0 mb-1.5 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Enter</span>
+                            </button>
 
-                                <button @click="openEnterModal(course.id)" class="p-1 text-blue-600 bg-blue-50 dark:bg-blue-900/30 rounded border border-blue-200 dark:border-blue-800 shadow-sm" title="Enter Class">
-                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                                </button>
+                            <!-- Publish/Draft -->
+                            <button v-if="!course.is_published" @click="openBulkStatus('publish', course.id)" class="group relative p-1 sm:p-1.5 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400 rounded border border-emerald-200 dark:border-emerald-800 shadow-sm">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                                <span class="absolute bottom-full right-0 mb-1.5 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Publish</span>
+                            </button>
+                            <button v-else @click="openBulkStatus('draft', course.id)" class="group relative p-1 sm:p-1.5 text-slate-600 bg-slate-100 dark:bg-slate-700/50 rounded border border-slate-300 dark:border-slate-600 shadow-sm">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                <span class="absolute bottom-full right-0 mb-1.5 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Draft</span>
+                            </button>
 
-                                <button v-if="!course.is_published" @click="openBulkStatus('publish', course.id)" class="p-1 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 rounded border border-emerald-200 dark:border-emerald-800 shadow-sm" title="Publish">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
-                                </button>
-                                <button v-else @click="openBulkStatus('draft', course.id)" class="p-1 text-slate-600 bg-slate-100 dark:bg-slate-700/50 rounded border border-slate-300 dark:border-slate-600 shadow-sm" title="Draft">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                </button>
+                            <!-- Edit -->
+                            <button @click="openEditModal(course)" class="group relative p-1 sm:p-1.5 text-slate-600 bg-slate-100 dark:bg-slate-700 dark:text-slate-300 rounded border border-slate-300 dark:border-slate-600 shadow-sm">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                <span class="absolute bottom-full right-0 mb-1.5 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Edit</span>
+                            </button>
 
-                                <button @click="openEditModal(course)" class="p-1 text-slate-600 bg-slate-100 dark:bg-slate-700 rounded border border-slate-300 dark:border-slate-600 shadow-sm" title="Edit">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                                </button>
-
-                                <button @click="openBulkDelete(course.id)" class="p-1 text-red-600 bg-red-50 dark:bg-red-900/30 rounded border border-red-200 dark:border-red-800 shadow-sm" title="Delete">
-                                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                </button>
-                            </div>
+                            <!-- Delete -->
+                            <button @click="openBulkDelete(course.id)" class="group relative p-1 sm:p-1.5 text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400 rounded border border-red-200 dark:border-red-800 shadow-sm">
+                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                <span class="absolute bottom-full right-0 mb-1.5 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Delete</span>
+                            </button>
                         </div>
                     </div>
                     
@@ -565,9 +617,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 sm:pr-2 pb-2">
                         <div class="mb-3 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
                             <InputLabel value="1. Select Instructor" class="text-[9px] font-black uppercase tracking-widest text-blue-600 mb-1" />
-                            <select v-model="form.teacher_id" :class="inputClass" class="cursor-pointer font-bold" required>
-                                <option value="" disabled>Select an instructor...</option>
-                                <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
+                            <select v-model="form.teacher_id" :class="inputClass" class="cursor-pointer font-bold dark:[color-scheme:dark]" required>
+                                <option value="" disabled class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Select an instructor...</option>
+                                <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ teacher.name }}</option>
                             </select>
                             <InputError :message="form.errors.teacher_id" class="mt-1 text-[9px]" />
                         </div>
@@ -575,11 +627,11 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <div class="flex overflow-x-auto gap-2 border-b border-slate-200 dark:border-slate-700 pb-2 mb-3 no-scrollbar">
                             <button v-for="(course, index) in form.courses" :key="index" @click="activeCourseTab = index" type="button"
                                 class="px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest whitespace-nowrap transition-colors"
-                                :class="activeCourseTab === index ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">
+                                :class="activeCourseTab === index ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-400 dark:hover:bg-slate-600'">
                                 Subj {{ index + 1 }}
                             </button>
-                            <button type="button" @click="addCourseTab" class="px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-600 hover:bg-emerald-200 text-[9px] font-black uppercase transition-colors shrink-0 flex items-center gap-1">
-                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"></path></svg> Add
+                            <button type="button" @click="addCourseTab" class="px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-600 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-400 dark:hover:bg-emerald-900/60 text-[9px] font-black uppercase transition-colors shrink-0 flex items-center gap-1">
+                                <Plus class="w-3 h-3" /> Add
                             </button>
                         </div>
 
@@ -587,7 +639,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             <div class="flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 px-2 py-1.5 rounded border border-slate-100 dark:border-slate-700">
                                 <span class="text-[9px] font-black text-slate-500 uppercase tracking-widest">Subject {{ index + 1 }}</span>
                                 <button v-if="form.courses.length > 1" @click="removeCourseTab(index)" type="button" class="text-[8px] font-bold text-red-500 hover:text-red-700 uppercase tracking-widest flex items-center gap-1">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg> Remove
+                                    <Trash2 class="w-3 h-3" /> Remove
                                 </button>
                             </div>
 
@@ -599,11 +651,11 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 </div>
                                 <div>
                                     <InputLabel value="Year Level *" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                    <select v-model="course.difficulty_level" :class="inputClass" required>
-                                        <option value="beginner">1st Year</option>
-                                        <option value="intermediate">2nd Year</option>
-                                        <option value="advanced">3rd Year</option>
-                                        <option value="final">4th Year</option>
+                                    <select v-model="course.difficulty_level" :class="inputClass" required class="dark:[color-scheme:dark]">
+                                        <option value="beginner" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">1st Year</option>
+                                        <option value="intermediate" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">2nd Year</option>
+                                        <option value="advanced" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">3rd Year</option>
+                                        <option value="final" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">4th Year</option>
                                     </select>
                                 </div>
                                 <div>
@@ -614,7 +666,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
                             <div class="border border-blue-100 dark:border-blue-900/50 rounded-lg p-2.5 bg-blue-50/30 dark:bg-blue-900/10">
                                 <h4 class="text-[8px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    <Calendar class="w-3 h-3" />
                                     Schedule & Room
                                 </h4>
                                 
@@ -622,7 +674,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <div class="flex gap-1 flex-wrap sm:flex-nowrap">
                                         <label v-for="day in daysOfWeek" :key="day" 
                                             class="flex-1 text-center border rounded cursor-pointer text-[9px] py-1 transition-colors shadow-sm min-w-[30px]"
-                                            :class="course.days.includes(day) ? 'bg-blue-600 text-white border-blue-600 font-bold' : 'bg-white text-slate-500'">
+                                            :class="course.days.includes(day) ? 'bg-blue-600 text-white border-blue-600 font-bold' : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'">
                                             <input type="checkbox" :value="day" v-model="course.days" class="hidden">
                                             {{ day }}
                                         </label>
@@ -632,12 +684,12 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 <div class="grid grid-cols-3 gap-2">
                                     <div>
                                         <InputLabel value="Start Time" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                        <input v-model="course.start_time" type="time" :class="inputClass" />
+                                        <input v-model="course.start_time" type="time" :class="inputClass" class="dark:[color-scheme:dark]"/>
                                         <InputError :message="form.errors[`courses.${index}.start_time`]" class="mt-1 text-[8px] text-red-600 font-bold" />
                                     </div>
                                     <div>
                                         <InputLabel value="End Time" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                        <input v-model="course.end_time" type="time" :class="inputClass" />
+                                        <input v-model="course.end_time" type="time" :class="inputClass" class="dark:[color-scheme:dark]"/>
                                     </div>
                                     <div>
                                         <InputLabel value="Room" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
@@ -651,7 +703,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
                         <span class="text-[9px] font-black uppercase tracking-widest text-slate-400 hidden sm:inline">Total: {{ form.courses.length }}</span>
                         <div class="flex gap-2 w-full sm:w-auto justify-end">
-                            <button type="button" @click="isCreateModalOpen = false" class="text-[9px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 uppercase tracking-widest transition">Cancel</button>
+                            <button type="button" @click="isCreateModalOpen = false" class="text-[9px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 dark:hover:text-slate-300 uppercase tracking-widest transition">Cancel</button>
                             <button :disabled="form.processing" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-[9px] uppercase tracking-widest font-black shadow-sm transition flex-1 sm:flex-none">
                                 Save All
                             </button>
@@ -679,19 +731,19 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
                             <div>
                                 <InputLabel value="Teacher" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                <select v-model="editForm.teacher_id" :class="inputClass" class="cursor-pointer" required>
-                                    <option value="" disabled>Select a teacher...</option>
-                                    <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">{{ teacher.name }}</option>
+                                <select v-model="editForm.teacher_id" :class="inputClass" class="cursor-pointer dark:[color-scheme:dark]" required>
+                                    <option value="" disabled class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Select a teacher...</option>
+                                    <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ teacher.name }}</option>
                                 </select>
                             </div>
 
                             <div>
                                 <InputLabel value="Year Level" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                <select v-model="editForm.difficulty_level" :class="inputClass" class="cursor-pointer" required>
-                                    <option value="beginner">1st Year</option>
-                                    <option value="intermediate">2nd Year</option>
-                                    <option value="advanced">3rd Year</option>
-                                    <option value="final">4th Year</option>
+                                <select v-model="editForm.difficulty_level" :class="inputClass" class="cursor-pointer dark:[color-scheme:dark]" required>
+                                    <option value="beginner" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">1st Year</option>
+                                    <option value="intermediate" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">2nd Year</option>
+                                    <option value="advanced" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">3rd Year</option>
+                                    <option value="final" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">4th Year</option>
                                 </select>
                             </div>
                         </div>
@@ -702,7 +754,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 <div class="flex gap-1 flex-wrap sm:flex-nowrap">
                                     <label v-for="day in daysOfWeek" :key="day" 
                                         class="flex-1 text-center border rounded cursor-pointer text-[9px] py-1 transition-colors shadow-sm min-w-[30px]"
-                                        :class="editForm.days.includes(day) ? 'bg-blue-600 text-white border-blue-600 font-bold' : 'bg-white text-slate-500'">
+                                        :class="editForm.days.includes(day) ? 'bg-blue-600 text-white border-blue-600 font-bold' : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'">
                                         <input type="checkbox" :value="day" v-model="editForm.days" class="hidden">
                                         {{ day }}
                                     </label>
@@ -711,12 +763,12 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             <div class="grid grid-cols-3 gap-2">
                                 <div>
                                     <InputLabel value="Start Time" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                    <input v-model="editForm.start_time" type="time" :class="inputClass" />
+                                    <input v-model="editForm.start_time" type="time" :class="inputClass" class="dark:[color-scheme:dark]" />
                                     <InputError :message="editForm.errors.start_time" class="mt-1 text-[8px] text-red-600 font-bold" />
                                 </div>
                                 <div>
                                     <InputLabel value="End Time" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                    <input v-model="editForm.end_time" type="time" :class="inputClass" />
+                                    <input v-model="editForm.end_time" type="time" :class="inputClass" class="dark:[color-scheme:dark]" />
                                 </div>
                                 <div>
                                     <InputLabel value="Room" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
@@ -727,12 +779,12 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
                         <div>
                             <InputLabel value="Thumbnail (Optional)" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                            <input type="file" @change="handleEditThumbnailUpload" accept="image/jpeg, image/png, image/jpg" class="w-full text-[9px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[8px] file:font-bold file:uppercase file:bg-amber-50 file:text-amber-700 cursor-pointer border border-slate-200 rounded p-1" />
+                            <input type="file" @change="handleEditThumbnailUpload" accept="image/jpeg, image/png, image/jpg" class="w-full text-[9px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[8px] file:font-bold file:uppercase file:bg-amber-50 file:text-amber-700 dark:file:bg-amber-900/30 dark:file:text-amber-400 cursor-pointer border border-slate-200 dark:border-slate-700 rounded p-1" />
                         </div>
                     </div>
 
                     <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2 shrink-0">
-                        <button type="button" @click="isEditModalOpen = false" class="text-[9px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 uppercase tracking-widest">Cancel</button>
+                        <button type="button" @click="isEditModalOpen = false" class="text-[9px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 dark:hover:text-slate-300 uppercase tracking-widest">Cancel</button>
                         <button :disabled="editForm.processing" class="bg-amber-500 hover:bg-amber-400 text-white px-4 py-1.5 rounded text-[9px] uppercase tracking-widest font-black shadow-sm transition">Update</button>
                     </div>
                 </form>
@@ -745,7 +797,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
         <Modal :show="isEnterModalOpen" :closeable="false" @close="isEnterModalOpen = false" maxWidth="sm">
             <div class="p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700">
                 <h2 class="text-sm font-black uppercase tracking-tight text-blue-600 flex items-center gap-2 mb-2">
-                    <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                    <ShieldAlert class="w-5 h-5 text-blue-500" />
                     Security Confirmation
                 </h2>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
@@ -758,7 +810,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <InputError :message="enterForm.errors.password" class="mt-1 text-[9px]" />
                     </div>
                     <div class="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
-                        <button type="button" @click="isEnterModalOpen = false" class="text-[10px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 uppercase tracking-widest transition">Cancel</button>
+                        <button type="button" @click="isEnterModalOpen = false" class="text-[10px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 dark:hover:text-slate-300 uppercase tracking-widest transition">Cancel</button>
                         <button :disabled="enterForm.processing" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded text-[10px] uppercase tracking-widest font-black shadow-sm transition">
                             Confirm & Enter
                         </button>
@@ -773,7 +825,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
         <Modal :show="isBulkStatusModalOpen" :closeable="false" @close="isBulkStatusModalOpen = false" maxWidth="sm">
             <div class="p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700">
                 <h2 class="text-sm font-black uppercase tracking-tight flex items-center gap-2 mb-2" :class="bulkStatusForm.action === 'publish' ? 'text-emerald-600' : 'text-slate-700 dark:text-slate-300'">
-                    <svg v-if="bulkStatusForm.action === 'publish'" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                    <ShieldAlert v-if="bulkStatusForm.action === 'publish'" class="w-5 h-5" />
                     <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     Confirm {{ bulkStatusForm.action === 'publish' ? 'Publish' : 'Draft' }}
                 </h2>
@@ -789,7 +841,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <InputError :message="bulkStatusForm.errors.password" class="mt-1 text-[9px]" />
                     </div>
                     <div class="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
-                        <button type="button" @click="isBulkStatusModalOpen = false" class="text-[10px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 uppercase tracking-widest transition">Cancel</button>
+                        <button type="button" @click="isBulkStatusModalOpen = false" class="text-[10px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 dark:hover:text-slate-300 uppercase tracking-widest transition">Cancel</button>
                         <button :disabled="bulkStatusForm.processing" class="px-4 py-1.5 rounded text-[10px] uppercase tracking-widest font-black shadow-sm transition text-white" :class="bulkStatusForm.action === 'publish' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-slate-600 hover:bg-slate-500'">
                             Confirm
                         </button>
@@ -801,7 +853,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
         <Modal :show="isBulkDeleteModalOpen" :closeable="false" @close="isBulkDeleteModalOpen = false" maxWidth="sm">
             <div class="p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700">
                 <h2 class="text-sm font-black uppercase tracking-tight text-red-600 flex items-center gap-2 mb-2">
-                    <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <Trash2 class="w-5 h-5 text-red-500" />
                     Confirm Permanent Deletion
                 </h2>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
@@ -814,7 +866,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <InputError :message="bulkDeleteForm.errors.password" class="mt-1 text-[9px]" />
                     </div>
                     <div class="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
-                        <button type="button" @click="isBulkDeleteModalOpen = false" class="text-[10px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 uppercase tracking-widest transition">Cancel</button>
+                        <button type="button" @click="isBulkDeleteModalOpen = false" class="text-[10px] text-slate-500 px-3 py-1.5 font-bold hover:text-slate-700 dark:hover:text-slate-300 uppercase tracking-widest transition">Cancel</button>
                         <button :disabled="bulkDeleteForm.processing" class="bg-red-600 hover:bg-red-500 text-white px-4 py-1.5 rounded text-[10px] uppercase tracking-widest font-black shadow-sm transition">Permanently Delete</button>
                     </div>
                 </form>

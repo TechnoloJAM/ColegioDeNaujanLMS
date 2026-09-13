@@ -130,6 +130,9 @@ Route::middleware(['auth', 'verified', 'role:teacher'])->prefix('teacher')->name
 Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
     
+    // Quick Actions
+    Route::post('/broadcast', [AdminDashboardController::class, 'storeBroadcast'])->name('broadcast');
+    
     // User Management
     Route::get('/users', [AdminDashboardController::class, 'users'])->name('users.index');
     Route::post('/users', [AdminDashboardController::class, 'storeUser'])->name('users.store');

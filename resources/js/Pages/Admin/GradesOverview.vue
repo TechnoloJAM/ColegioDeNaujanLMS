@@ -2,7 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
-import { Download, Search, FileSpreadsheet } from 'lucide-vue-next';
+import { Download, Search, FileSpreadsheet, Users, BookOpen } from 'lucide-vue-next';
 import * as XLSX from 'xlsx';
 
 const props = defineProps({
@@ -30,11 +30,31 @@ const filteredCourses = computed(() => {
     }
 
     if (searchQuery.value) {
-        const lowerSearch = searchQuery.value.toLowerCase();
-        result = result.filter(c => 
-            c.title.toLowerCase().includes(lowerSearch) || 
-            c.teacher.toLowerCase().includes(lowerSearch)
-        );
+        const lowerSearch = searchQuery.value.toLowerCase().trim();
+        
+        result = result.map(c => {
+            // 1. Check if the course or teacher matches
+            const courseMatches = c.title.toLowerCase().includes(lowerSearch) || 
+                                  c.teacher.toLowerCase().includes(lowerSearch) ||
+                                  (c.enrollment_code && c.enrollment_code.toLowerCase().includes(lowerSearch));
+            
+            // 2. Check if any students match the search query
+            const matchingStudents = c.students ? c.students.filter(s => 
+                s.name.toLowerCase().includes(lowerSearch) || 
+                (s.email && s.email.toLowerCase().includes(lowerSearch))
+            ) : [];
+            
+            // If the course or instructor matches, return the course fully intact
+            if (courseMatches) {
+                return c;
+            } 
+            // If only a student matches, return the course but filter the table to ONLY show that student
+            else if (matchingStudents.length > 0) {
+                return { ...c, students: matchingStudents };
+            }
+            
+            return null; // Exclude course if nothing matches
+        }).filter(Boolean); // Remove null values
     }
 
     return result;
@@ -105,7 +125,7 @@ const downloadExcel = () => {
 
         const ws = XLSX.utils.aoa_to_sheet(wsData);
 
-        // NEW: Merge Cells to make the headers look like a professional document
+        // Merge Cells to make the headers look like a professional document
         ws['!merges'] = [
             { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }, // Merge "OFFICIAL CLASS RECORD" across all 9 columns
             { s: { r: 2, c: 1 }, e: { r: 2, c: 3 } }, // Merge Course Title across 3 columns
@@ -142,6 +162,15 @@ const downloadExcel = () => {
     <Head title="Grades Overview" />
 
     <AuthenticatedLayout>
+        
+        <!-- MOBILE FLOATING FAB: Placed perfectly above chat widget, with black/white borders & Tooltips -->
+        <div class="md:hidden fixed bottom-[150px] right-4 z-[999] flex flex-col gap-2 items-center pointer-events-none">
+            <button @click="downloadExcel" class="group relative pointer-events-auto flex items-center justify-center w-10 h-10 bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 rounded-full border border-black dark:border-white shadow-[0_8px_30px_rgba(0,0,0,0.15)] transition-transform active:scale-95">
+                <Download class="w-4 h-4" />
+                <span class="absolute right-full mr-2 bg-slate-800 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50">Export Excel</span>
+            </button>
+        </div>
+
         <div class="max-w-screen-2xl mx-auto flex flex-col h-full">
             
             <div class="mb-4 pb-3 border-b border-slate-200 dark:border-slate-700 shrink-0 px-1 sm:px-0 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
@@ -153,7 +182,7 @@ const downloadExcel = () => {
                     <p class="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest mt-1 ml-8">System-wide academic performance</p>
                 </div>
 
-                <div class="flex items-center gap-3">
+                <div class="hidden sm:flex items-center gap-3">
                     <button @click="downloadExcel" class="w-full sm:w-auto justify-center bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 sm:py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm transition-all flex items-center gap-1.5 h-full">
                         <Download class="w-4 h-4 shrink-0" />
                         Export to Excel
@@ -161,29 +190,64 @@ const downloadExcel = () => {
                 </div>
             </div>
 
-            <div class="flex flex-col sm:flex-row gap-3 mb-4">
-                <div class="relative flex-1">
-                    <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input v-model="searchQuery" type="text" placeholder="Search by course or teacher name..." 
-                        class="w-full pl-9 pr-4 py-2 sm:py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 transition shadow-sm" />
-                </div>
+            <!-- RESPONSIVE SEARCH & FILTER CARD -->
+            <div class="bg-white dark:bg-slate-800 p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm mb-4 flex flex-row sm:flex-col lg:flex-row gap-1.5 sm:gap-2.5 items-center sm:items-stretch lg:items-center min-w-0 mx-1 sm:mx-0">
                 
-                <select v-model="selectedTeacher" class="w-full sm:w-auto sm:min-w-[160px] py-2 sm:py-1.5 px-3 text-[10px] sm:text-xs font-bold uppercase tracking-widest sm:tracking-normal sm:normal-case rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer">
-                    <option value="all">All Instructors</option>
-                    <option v-for="teacher in uniqueTeachers" :key="teacher" :value="teacher">{{ teacher }}</option>
-                </select>
+                <!-- Search -->
+                <div class="relative flex-1 min-w-[120px] sm:min-w-[200px]">
+                    <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                        <Search class="h-3.5 w-3.5 text-slate-400" />
+                    </div>
+                    <!-- Placeholder updated to reflect multi-search functionality -->
+                    <input v-model="searchQuery" type="text" placeholder="Search students, courses, or instructors..." class="w-full h-8 pl-8 rounded sm:rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 sm:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-1 sm:focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-xs shadow-sm transition-colors" />
+                </div>
 
-                <select v-model="selectedCourseId" class="w-full sm:w-auto sm:min-w-[200px] py-2 sm:py-1.5 px-3 text-[10px] sm:text-xs font-bold uppercase tracking-widest sm:tracking-normal sm:normal-case rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer">
-                    <option value="all">All Courses</option>
-                    <option v-for="c in courses" :key="c.id" :value="c.id">{{ c.title }}</option>
-                </select>
+                <!-- MOBILE FILTERS (Icon Only, Overlay Select, With Tooltips) -->
+                <div class="flex sm:hidden flex-row gap-1.5 shrink-0">
+                    <div class="relative shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center w-8 h-8 shadow-sm transition group hover:bg-slate-50 dark:hover:bg-slate-700">
+                        <Users class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                        <select v-model="selectedTeacher" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]" title="Filter by Instructor">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Instructors</option>
+                            <option v-for="teacher in uniqueTeachers" :key="teacher" :value="teacher" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ teacher }}</option>
+                        </select>
+                        <span class="absolute bottom-full right-0 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50 font-bold uppercase tracking-widest">Instructor</span>
+                    </div>
+                    
+                    <div class="relative shrink-0 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center w-8 h-8 shadow-sm transition group hover:bg-slate-50 dark:hover:bg-slate-700">
+                        <BookOpen class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                        <select v-model="selectedCourseId" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]" title="Filter by Course">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Courses</option>
+                            <option v-for="c in courses" :key="c.id" :value="c.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ c.title }}</option>
+                        </select>
+                        <span class="absolute bottom-full right-0 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50 font-bold uppercase tracking-widest">Course</span>
+                    </div>
+                </div>
+
+                <!-- DESKTOP FILTERS (Expanded with Text) -->
+                <div class="hidden sm:grid grid-cols-2 lg:flex lg:flex-row gap-2 w-full lg:w-auto shrink-0 mt-1 lg:mt-0">
+                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[140px]">
+                        <Users class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <select v-model="selectedTeacher" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Instructors</option>
+                            <option v-for="teacher in uniqueTeachers" :key="teacher" :value="teacher" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ teacher }}</option>
+                        </select>
+                    </div>
+                    
+                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[160px]">
+                        <BookOpen class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <select v-model="selectedCourseId" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Courses</option>
+                            <option v-for="c in courses" :key="c.id" :value="c.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ c.title }}</option>
+                        </select>
+                    </div>
+                </div>
             </div>
 
             <div class="flex-1 overflow-y-auto space-y-4 pb-8 custom-scrollbar pr-1">
                 
                 <div v-if="filteredCourses.length === 0" class="text-center py-12 bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
                     <FileSpreadsheet class="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
-                    <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">No courses match your search.</p>
+                    <p class="text-[10px] font-black uppercase tracking-widest text-slate-500">No records match your search.</p>
                 </div>
 
                 <div v-for="course in filteredCourses" :key="course.id" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -256,7 +320,7 @@ const downloadExcel = () => {
                                 </div>
                                 <div class="flex items-center justify-between text-[8px] font-bold uppercase tracking-widest ml-6">
                                     <div class="flex gap-2.5 text-slate-500 dark:text-slate-400">
-                                        <span>Asg: <span class="text-blue-600 dark:text-blue-400">{{ student.assignment_score }}</span></span>
+                                        <span>Ass: <span class="text-blue-600 dark:text-blue-400">{{ student.assignment_score }}</span></span>
                                         <span>Act: <span class="text-purple-600 dark:text-purple-400">{{ student.activity_score }}</span></span>
                                         <span>PT: <span class="text-orange-600 dark:text-orange-400">{{ student.pt_score }}</span></span>
                                     </div>
@@ -267,7 +331,7 @@ const downloadExcel = () => {
                     </div>
                     
                     <div v-else class="p-4 text-center text-[9px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                        No students enrolled.
+                        No students match search.
                     </div>
                 </div>
 

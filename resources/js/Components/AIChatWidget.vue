@@ -13,7 +13,6 @@ const page = usePage();
 const userId = page.props.auth.user.id;
 const storageKey = `lms_ai_chat_history_${userId}`;
 
-// --- NEW: SUGGESTION CHIPS LOGIC ---
 const suggestions = [
     "Do I have missing tasks?",
     "Show my grades",
@@ -24,9 +23,7 @@ const sendSuggestion = (text) => {
     userMessage.value = text;
     sendMessage();
 };
-// -----------------------------------
 
-// --- PERSISTENCE LOGIC ---
 onMounted(() => {
     const savedChat = localStorage.getItem(storageKey);
     if (savedChat) {
@@ -51,7 +48,6 @@ const clearChat = () => {
     }
 };
 
-// --- CHAT LOGIC ---
 const scrollToBottom = async () => {
     await nextTick();
     if (messagesContainer.value) {
@@ -64,12 +60,11 @@ const toggleChat = () => {
     if (isOpen.value) scrollToBottom();
 };
 
-// Simple text formatter to make the AI's Bold text and Line Breaks look beautiful
 const formatMessage = (text) => {
     if (!text) return '';
     return text
-        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-black">$1</strong>') // Bold formatting
-        .replace(/\n/g, '<br/>'); // Line break formatting
+        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-black">$1</strong>')
+        .replace(/\n/g, '<br/>');
 };
 
 const sendMessage = async () => {
@@ -85,14 +80,13 @@ const sendMessage = async () => {
     scrollToBottom();
 
     try {
-        // Silently pass the current screen context to the AI
         const response = await axios.post(route('ai.chat'), { 
             message: currentMessage,
             current_url: window.location.pathname,
             page_title: document.title
         });
         
-        messages.value.pop(); // Remove loading dots
+        messages.value.pop();
         messages.value.push({ role: 'ai', content: response.data.response });
     } catch (error) {
         console.error("AI CHAT ERROR:", error.response?.data || error);
@@ -115,8 +109,9 @@ const sendMessage = async () => {
             leave-from-class="opacity-100 translate-y-0 scale-100"
             leave-to-class="opacity-0 translate-y-10 scale-95"
         >
-            <div v-show="isOpen" class="fixed z-50 flex flex-col bg-white dark:bg-slate-800 shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bottom-28 left-4 right-4 h-[60vh] rounded-2xl sm:bottom-24 sm:right-6 sm:left-auto sm:w-80 sm:h-[450px] sm:rounded-xl">
+            <div v-show="isOpen" class="fixed z-[9999] flex flex-col bg-white dark:bg-slate-800 shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bottom-28 left-4 right-4 h-[60vh] rounded-2xl sm:bottom-24 sm:right-6 sm:left-auto sm:w-80 sm:h-[450px] sm:rounded-xl">
                 
+                <!-- Chat Header with Close "X" -->
                 <div class="bg-blue-600 p-3 sm:p-4 flex justify-between items-center shrink-0 shadow-md z-10">
                     <div class="flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white backdrop-blur-sm">
@@ -132,7 +127,8 @@ const sendMessage = async () => {
                         <button @click="clearChat" class="text-blue-100 hover:text-white transition p-1.5 rounded-md hover:bg-white/10" title="Clear Chat">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                         </button>
-                        <button @click="toggleChat" class="text-blue-100 hover:text-white transition p-1.5 rounded-md hover:bg-white/10">
+                        <!-- Top Close Button (Retained) -->
+                        <button @click="toggleChat" class="text-blue-100 hover:text-white transition p-1.5 rounded-md hover:bg-white/10" title="Close Chat">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
@@ -150,7 +146,6 @@ const sendMessage = async () => {
                     </div>
                 </div>
 
-                <!-- NEW: SUGGESTION CHIPS -->
                 <div v-if="page.props.auth.user.role === 'student'" class="px-3 py-2 bg-slate-50 dark:bg-slate-900/50 flex gap-2 overflow-x-auto scrollbar-hide shrink-0 border-t border-slate-200 dark:border-slate-700">
                     <button v-for="suggestion in suggestions" :key="suggestion"
                             @click="sendSuggestion(suggestion)"
@@ -158,7 +153,6 @@ const sendMessage = async () => {
                         {{ suggestion }}
                     </button>
                 </div>
-                <!-- ------------------------ -->
 
                 <div class="p-2 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 shrink-0">
                     <form @submit.prevent="sendMessage" class="relative flex items-center gap-2">
@@ -171,19 +165,16 @@ const sendMessage = async () => {
             </div>
         </transition>
 
-        <button @click="toggleChat" class="fixed bottom-24 md:bottom-6 right-4 md:right-6 z-50 group flex items-center justify-center w-12 h-12 bg-blue-600 text-white rounded-full shadow-lg hover:scale-110 transition-all focus:ring-4 focus:ring-blue-500/30">
-            <span v-if="!isOpen" class="group-hover:rotate-12 transition-transform">
+        <!-- Floating Action Button (Only visible when chat is closed) -->
+        <button v-show="!isOpen" @click="toggleChat" class="fixed bottom-24 md:bottom-6 right-4 md:right-6 z-[9999] group flex items-center justify-center w-12 h-12 bg-blue-600 text-white rounded-full shadow-lg hover:scale-110 transition-all focus:ring-4 focus:ring-blue-500/30">
+            <span class="group-hover:rotate-12 transition-transform">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-            </span>
-            <span v-else class="rotate-90 transition-transform">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </span>
         </button>
     </div>
 </template>
 
 <style scoped>
-/* NEW: CSS to hide the scrollbar for the suggestion chips but keep them scrollable */
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
 }

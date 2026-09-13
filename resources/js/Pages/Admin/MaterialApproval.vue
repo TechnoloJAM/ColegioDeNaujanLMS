@@ -5,6 +5,7 @@ import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 import Modal from '@/Components/Modal.vue';
 import InputError from '@/Components/InputError.vue';
+import { Eye, Download, Users, BookOpen, Calendar, Filter } from 'lucide-vue-next';
 
 const props = defineProps({ 
     materials: Array,
@@ -24,16 +25,9 @@ const selectedCourseFilter = ref('all');
 const selectedSemesterFilter = ref('all');
 const selectedInstructorFilter = ref('all');
 
-const showCourseDropdown = ref(false);
-
 const openMaterialPreview = (path) => {
     selectedMaterialPath.value = path;
     showMaterialPreview.value = true;
-};
-
-const setCourseFilter = (id) => {
-    selectedCourseFilter.value = id;
-    showCourseDropdown.value = false;
 };
 
 const availableCourses = computed(() => {
@@ -140,7 +134,6 @@ const submitUnarchive = () => {
     });
 };
 
-// FIXED: Handles null database values by treating them as 1st semester
 const baseFilteredMaterials = computed(() => {
     return props.materials.filter(m => {
         const matSem = m.semester || '1st'; 
@@ -285,90 +278,111 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
         </div>
 
         <div class="max-w-6xl space-y-3">
-            
-            <div class="flex flex-col lg:flex-row gap-2.5">
-                <!-- TABS -->
-                <div class="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg gap-1 overflow-x-auto shadow-sm border border-slate-200 dark:border-slate-700 flex-1 scrollbar-hide">
-                    <button @click="activeTab = 'pending'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'pending' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                        Pending <span v-if="pendingMaterials.length" class="bg-orange-100 text-orange-600 px-1 rounded text-[8px]">{{ pendingMaterials.length }}</span>
-                    </button>
-                    <button @click="activeTab = 'approved'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'approved' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                        Approved <span v-if="approvedMaterials.length" class="bg-emerald-100 text-emerald-600 px-1 rounded text-[8px]">{{ approvedMaterials.length }}</span>
-                    </button>
-                    <button @click="activeTab = 'rejected'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'rejected' ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                        Rejected <span v-if="rejectedMaterials.length" class="bg-red-100 text-red-600 px-1 rounded text-[8px]">{{ rejectedMaterials.length }}</span>
-                    </button>
-                    <button @click="activeTab = 'archived'" class="shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'archived' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                        Archived <span v-if="archivedMaterials.length" class="bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-1 rounded text-[8px]">{{ archivedMaterials.length }}</span>
-                    </button>
-                </div>
 
-                <!-- FIXED: Grid layout on mobile prevents the screen-crashing horizontal stretch -->
-                <div class="grid grid-cols-2 lg:flex lg:flex-row gap-1.5 sm:gap-2 w-full lg:w-auto relative z-50">
+            <!-- SINGLE HORIZONTAL FILTER CARD -->
+            <div class="bg-white dark:bg-slate-800 p-1.5 sm:p-2.5 rounded-lg sm:rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-row sm:flex-wrap items-center gap-1.5 sm:gap-2.5 min-w-0 z-50">
+                
+                <!-- MOBILE FILTERS (Icons + Overlay Select) -->
+                <div class="flex sm:hidden flex-row gap-1.5 w-full">
                     
-                    <!-- SEMESTER FILTER -->
-                    <div class="col-span-1 lg:w-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-0">
-                        <svg class="w-3.5 h-3.5 text-purple-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                        <select v-model="selectedSemesterFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
-                            <option value="all">All Semesters</option>
-                            <option value="1st">1st Semester</option>
-                            <option value="2nd">2nd Semester</option>
+                    <div class="relative flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center h-8 shadow-sm transition group hover:bg-slate-100 dark:hover:bg-slate-700">
+                        <Calendar class="w-4 h-4 text-purple-500 dark:text-purple-400 pointer-events-none" />
+                        <select v-model="selectedSemesterFilter" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Semesters</option>
+                            <option value="1st" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">1st Semester</option>
+                            <option value="2nd" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">2nd Semester</option>
                         </select>
+                        <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50 font-bold uppercase tracking-widest">Semester</span>
                     </div>
 
-                    <!-- INSTRUCTOR FILTER -->
-                    <div class="col-span-1 lg:w-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-0">
-                        <svg class="w-3.5 h-3.5 text-blue-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                        <select v-model="selectedInstructorFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
-                            <option value="all">All Instructors</option>
-                            <option v-for="instructor in availableInstructors" :key="instructor.id" :value="instructor.id">{{ instructor.name }}</option>
+                    <div class="relative flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center h-8 shadow-sm transition group hover:bg-slate-100 dark:hover:bg-slate-700">
+                        <Users class="w-4 h-4 text-blue-500 dark:text-blue-400 pointer-events-none" />
+                        <select v-model="selectedInstructorFilter" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Instructors</option>
+                            <option v-for="instructor in availableInstructors" :key="instructor.id" :value="instructor.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ instructor.name }}</option>
                         </select>
+                        <span class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50 font-bold uppercase tracking-widest">Instructor</span>
                     </div>
 
-                    <!-- COURSE FILTER DROPDOWN -->
-                    <div class="col-span-2 lg:col-span-1 lg:w-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-0 relative cursor-pointer select-none" @click="showCourseDropdown = !showCourseDropdown">
+                    <div class="relative flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center h-8 shadow-sm transition group hover:bg-slate-100 dark:hover:bg-slate-700">
                         <span v-if="pendingMaterials.length > 0 && selectedCourseFilter === 'all'" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm border border-white dark:border-slate-800"></span>
                         <span v-else-if="selectedCourseFilter !== 'all' && availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount > 0" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm border border-white dark:border-slate-800"></span>
+                        <BookOpen class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
                         
-                        <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg>
-                        
-                        <div class="text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full flex justify-between items-center py-0.5">
-                            <span class="truncate pr-1">
-                                {{ selectedCourseFilter === 'all' ? 'All Courses' : availableCourses.find(c => c.id === selectedCourseFilter)?.title }}
-                            </span>
-                            <span v-if="selectedCourseFilter !== 'all' && availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount > 0" class="bg-red-500 text-white px-1 py-0.5 rounded text-[7px] shadow-sm shrink-0">
-                                {{ availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount }}
-                            </span>
-                            <span v-else-if="selectedCourseFilter === 'all' && props.materials.filter(m => m.approval_status === 'pending').length > 0" class="bg-red-500 text-white px-1 py-0.5 rounded text-[7px] shadow-sm shrink-0">
-                                {{ props.materials.filter(m => m.approval_status === 'pending').length }}
-                            </span>
-                        </div>
-
-                        <div v-if="showCourseDropdown" @click.stop="showCourseDropdown = false" class="fixed inset-0 z-40"></div>
-
-                        <transition enter-active-class="transition ease-out duration-100" enter-from-class="opacity-0 scale-95" enter-to-class="opacity-100 scale-100" leave-active-class="transition ease-in duration-75" leave-from-class="opacity-100 scale-100" leave-to-class="opacity-0 scale-95">
-                            <div v-if="showCourseDropdown" class="absolute top-full left-0 mt-1 w-full sm:w-60 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-[60] py-1 overflow-y-auto max-h-48 custom-scrollbar">
-                                <div @click.stop="setCourseFilter('all')" class="px-2.5 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex justify-between items-center cursor-pointer border-b border-slate-100 dark:border-slate-700/50">
-                                    <span>All Courses</span>
-                                    <span v-if="props.materials.filter(m => m.approval_status === 'pending').length > 0" class="bg-red-500 text-white px-1.5 py-0.5 rounded shadow-sm shrink-0 text-[8px]">{{ props.materials.filter(m => m.approval_status === 'pending').length }}</span>
-                                </div>
-                                <div v-for="c in availableCourses" :key="c.id" @click.stop="setCourseFilter(c.id)" class="px-2.5 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex justify-between items-center cursor-pointer">
-                                    <span class="truncate pr-2">{{ c.title }}</span>
-                                    <span v-if="c.pendingCount > 0" class="bg-red-500 text-white px-1.5 py-0.5 rounded shadow-sm shrink-0 text-[8px]">{{ c.pendingCount }}</span>
-                                </div>
-                            </div>
-                        </transition>
+                        <select v-model="selectedCourseFilter" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Courses</option>
+                            <option v-for="c in availableCourses" :key="c.id" :value="c.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                                {{ c.title }} {{ c.pendingCount > 0 ? `(${c.pendingCount} Pending)` : '' }}
+                            </option>
+                        </select>
+                        <span class="absolute bottom-full right-0 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50 font-bold uppercase tracking-widest">Course</span>
                     </div>
 
-                    <!-- SORT FILTER -->
-                    <div class="col-span-2 lg:col-span-1 lg:w-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-0">
-                        <svg class="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"></path></svg>
-                        <select v-model="sortOrder" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate">
-                            <option value="desc">Newest First</option>
-                            <option value="asc">Oldest First</option>
+                    <div class="relative flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded flex items-center justify-center h-8 shadow-sm transition group hover:bg-slate-100 dark:hover:bg-slate-700">
+                        <Filter class="w-4 h-4 text-slate-500 dark:text-slate-400 pointer-events-none" />
+                        <select v-model="sortOrder" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer dark:[color-scheme:dark]">
+                            <option value="desc" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Newest First</option>
+                            <option value="asc" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Oldest First</option>
+                        </select>
+                        <span class="absolute bottom-full right-0 mb-1 bg-slate-800 text-white text-[9px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 group-active:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-50 font-bold uppercase tracking-widest">Sort</span>
+                    </div>
+                </div>
+
+                <!-- DESKTOP FILTERS (Expanded with Text) -->
+                <div class="hidden sm:flex flex-row flex-wrap gap-2 w-full shrink-0">
+                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[130px]">
+                        <Calendar class="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                        <select v-model="selectedSemesterFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Semesters</option>
+                            <option value="1st" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">1st Semester</option>
+                            <option value="2nd" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">2nd Semester</option>
+                        </select>
+                    </div>
+
+                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[150px]">
+                        <Users class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <select v-model="selectedInstructorFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Instructors</option>
+                            <option v-for="instructor in availableInstructors" :key="instructor.id" :value="instructor.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ instructor.name }}</option>
+                        </select>
+                    </div>
+
+                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[160px] relative">
+                        <span v-if="pendingMaterials.length > 0 && selectedCourseFilter === 'all'" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm border border-white dark:border-slate-800"></span>
+                        <span v-else-if="selectedCourseFilter !== 'all' && availableCourses.find(c => c.id === selectedCourseFilter)?.pendingCount > 0" class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse shadow-sm border border-white dark:border-slate-800"></span>
+                        <BookOpen class="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        <select v-model="selectedCourseFilter" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                            <option value="all" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">All Courses</option>
+                            <option v-for="c in availableCourses" :key="c.id" :value="c.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                                {{ c.title }} {{ c.pendingCount > 0 ? `(${c.pendingCount} Pending)` : '' }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="shrink-0 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 shadow-sm flex items-center gap-1.5 min-w-[110px]">
+                        <Filter class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <select v-model="sortOrder" class="bg-transparent border-none text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 w-full focus:ring-0 cursor-pointer p-0 m-0 truncate dark:[color-scheme:dark]">
+                            <option value="desc" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Newest First</option>
+                            <option value="asc" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Oldest First</option>
                         </select>
                     </div>
                 </div>
+            </div>
+
+            <!-- TABS -->
+            <div class="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg gap-1 overflow-x-auto shadow-sm border border-slate-200 dark:border-slate-700 w-full scrollbar-hide">
+                <button @click="activeTab = 'pending'" class="flex-1 shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'pending' ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                    Pending <span v-if="pendingMaterials.length" class="bg-orange-100 text-orange-600 px-1 rounded text-[8px]">{{ pendingMaterials.length }}</span>
+                </button>
+                <button @click="activeTab = 'approved'" class="flex-1 shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'approved' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                    Approved <span v-if="approvedMaterials.length" class="bg-emerald-100 text-emerald-600 px-1 rounded text-[8px]">{{ approvedMaterials.length }}</span>
+                </button>
+                <button @click="activeTab = 'rejected'" class="flex-1 shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'rejected' ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                    Rejected <span v-if="rejectedMaterials.length" class="bg-red-100 text-red-600 px-1 rounded text-[8px]">{{ rejectedMaterials.length }}</span>
+                </button>
+                <button @click="activeTab = 'archived'" class="flex-1 shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'archived' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
+                    Archived <span v-if="archivedMaterials.length" class="bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 px-1 rounded text-[8px]">{{ archivedMaterials.length }}</span>
+                </button>
             </div>
 
             <transition enter-active-class="transition ease-out duration-200" enter-from-class="opacity-0 -translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition ease-in duration-150" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 -translate-y-2">
@@ -457,10 +471,10 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             
                             <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-auto" @click.stop>
                                 <button @click="openMaterialPreview(material.attachment_path)" title="Preview Material" class="p-1.5 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 transition border border-transparent shadow-sm">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                    <Eye class="w-3.5 h-3.5" />
                                 </button>
                                 <a :href="`/storage/${material.attachment_path}`" download title="Download Material" class="p-1.5 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50 transition border border-transparent shadow-sm">
-                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                    <Download class="w-3.5 h-3.5" />
                                 </a>
                                 
                                 <button @click="openEditModal(material)" class="text-[9px] font-bold uppercase tracking-wide bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1.5 rounded flex items-center gap-1 hover:bg-slate-200 transition">
@@ -489,12 +503,13 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
             </div>
         </div>
 
+        <!-- MODALS REMAIN EXACTLY THE SAME -->
         <Modal :show="showMaterialPreview" @close="showMaterialPreview = false" maxWidth="4xl">
             <div class="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[85vh]">
                 <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
                     <h3 class="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-tight">
                         <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                            <Eye class="w-4 h-4" />
                         </div>
                         Material Preview
                     </h3>
@@ -506,12 +521,12 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <img v-else-if="selectedMaterialPath?.match(/\.(jpeg|jpg|png|gif)$/i)" :src="`/storage/${selectedMaterialPath}`" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
                     
                     <div v-else class="text-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-sm w-full">
-                        <svg class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        <FileText class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" />
                         <p class="text-slate-500 font-black mb-1 text-[11px] uppercase tracking-widest">Preview unavailable</p>
                         <p class="text-slate-400 text-[10px] font-bold mb-6">This file type cannot be viewed directly.</p>
                         <div class="flex flex-col gap-2">
                             <a :href="`/storage/${selectedMaterialPath}`" download class="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition text-[10px] font-black uppercase tracking-widest px-4 py-3 rounded-lg shadow-sm w-full">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Download File
+                                <Download class="w-4 h-4" /> Download File
                             </a>
                         </div>
                     </div>
@@ -582,15 +597,12 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <InputError class="mt-1 text-[9px]" :message="editForm.errors.title" />
                     </div>
                     
-                    <!-- ADDED: Semester option in the edit modal -->
                     <div>
                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Semester *</label>
-                        
                         <select v-model="editForm.semester" :class="inputClass" required>
                             <option value="1st">1st Semester</option>
                             <option value="2nd">2nd Semester</option>
                         </select>
-                        
                         <InputError class="mt-1 text-[9px]" :message="editForm.errors.semester" />
                     </div>
 
