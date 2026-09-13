@@ -8,6 +8,14 @@ import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { Plus, Download, Search, Filter, BookOpen, Calendar, Trash2, ShieldAlert, Users } from 'lucide-vue-next';
+import { usePage } from '@inertiajs/vue3';
+
+
+const getFileUrl = (path) => {
+    if (!path) return '';
+    const cleanPath = path.replace(/^\/storage\//, '');
+    return `${usePage().props.env.AWS_URL}/${cleanPath}`;
+};
 
 const props = defineProps({
     courses: Array,
@@ -298,6 +306,8 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 <template>
     <Head title="Course Oversight" />
     <AuthenticatedLayout>
+
+        <img :src="getFileUrl(course.thumbnail)" alt="Course Thumbnail" />
         
         <!-- MOBILE FLOATING FAB: Placed perfectly above chat widget, with black/white borders & Tooltips -->
         <div class="md:hidden fixed bottom-[150px] right-4 z-[999] flex flex-col gap-2 items-center pointer-events-none">
