@@ -33,15 +33,29 @@ class GoogleAuthController extends Controller
                     'name' => $googleUser->getName(),
                     'email' => $googleUser->getEmail(),
                     'google_id' => $googleUser->getId(),
-                    'avatar' => $googleUser->getAvatar(), // Pulls Google Avatar automatically
+                    'avatar' => $googleUser->getAvatar(),
                     'password' => null, 
                     'role' => 'student', 
                     'email_verified_at' => null, 
                 ]);
                 
+                $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+                
+                \App\Models\OtpToken::create([
+                    'email' => $user->email,
+                    'token' => $code,
+                    'purpose' => 'registration',
+                ]);
+                
+                \Illuminate\Support\Facades\Mail::to($user->email)->send(new \App\Mail\OtpMail($code));
+                
+                session()->put('otp_email', $user->email);
+                
                 event(new Registered($user));
+
+                return redirect()->route('verification.notice');
+
             } else {
-                // Keep avatar synced to their current Google picture every time they log in
                 $user->update([
                     'google_id' => $googleUser->getId(),
                     'avatar' => $googleUser->getAvatar(),
@@ -54,11 +68,23 @@ class GoogleAuthController extends Controller
                 ]);
             }
 
-            Auth::login($user);
-
             if (!$user->hasVerifiedEmail()) {
+                \App\Models\OtpToken::where('email', $user->email)->where('purpose', 'registration')->delete();
+                $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+                
+                \App\Models\OtpToken::create([
+                    'email' => $user->email,
+                    'token' => $code,
+                    'purpose' => 'registration',
+                ]);
+                
+                \Illuminate\Support\Facades\Mail::to($user->email)->send(new \App\Mail\OtpMail($code));
+                
+                session()->put('otp_email', $user->email);
                 return redirect()->route('verification.notice');
             }
+
+            Auth::login($user);
 
             if (empty($user->school_id)) {
                 return redirect()->route('register.onboarding');

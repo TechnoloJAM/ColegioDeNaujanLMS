@@ -2,7 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import { Head, useForm, router } from '@inertiajs/vue3';
-import { FilePlus2, ChevronLeft, Paperclip, CheckCircle } from 'lucide-vue-next';
+import { FilePlus2, ChevronLeft, Paperclip, CheckCircle, Eye, Trash2 } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 
 const props = defineProps({
@@ -41,9 +41,26 @@ const goBack = () => {
     }
 };
 
+// --- NEW FILE HANDLING LOGIC ---
+const handleFileSelect = (e) => {
+    const selectedFiles = Array.from(e.target.files);
+    // Append files instead of overwriting (like MS Teams)
+    form.files = [...form.files, ...selectedFiles];
+    if (fileInput.value) fileInput.value.value = ''; // Reset input to allow selecting same file again
+};
+
+const removeFile = (index) => {
+    form.files.splice(index, 1);
+};
+
+const previewFile = (file) => {
+    const fileUrl = URL.createObjectURL(file);
+    window.open(fileUrl, '_blank');
+};
+// -------------------------------
+
 const submit = () => {
     // 🪄 INERTIA TRANSFORM: Intercepts the data right before sending
-    // Uses the new tag that won't be erased by the editor!
     form.transform((data) => ({
         ...data,
         description: data.hide_from_late 
@@ -150,15 +167,25 @@ const submit = () => {
 
                     <div>
                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Attachments (Optional)</label>
-                        <input type="file" ref="fileInput" multiple @change="e => form.files = Array.from(e.target.files)" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 cursor-pointer bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 transition shadow-sm" />
+                        <!-- Updated File Input to trigger handleFileSelect -->
+                        <input type="file" ref="fileInput" multiple @change="handleFileSelect" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 cursor-pointer bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 transition shadow-sm" />
                         
-                        <div v-if="form.files && form.files.length > 0" class="mt-2 space-y-1.5 max-h-28 overflow-y-auto custom-scrollbar">
-                            <div v-for="(file, index) in form.files" :key="index" class="text-[9px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <!-- Updated File Iteration with View/Remove buttons -->
+                        <div v-if="form.files && form.files.length > 0" class="mt-2 space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar pr-1">
+                            <div v-for="(file, index) in form.files" :key="index" class="text-[9px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800 shadow-sm">
                                 <div class="flex items-center gap-1.5 truncate pr-2">
                                     <Paperclip class="w-3 h-3 text-blue-500 shrink-0" />
                                     <span class="truncate">{{ file.name }}</span>
+                                    <span class="shrink-0 text-slate-400 ml-1">({{ (file.size / 1024).toFixed(0) }} KB)</span>
                                 </div>
-                                <span class="shrink-0 text-slate-400">{{ (file.size / 1024).toFixed(0) }} KB</span>
+                                <div class="flex items-center gap-2.5 shrink-0 pl-2">
+                                    <button type="button" @click="previewFile(file)" class="text-blue-600 hover:text-blue-500 flex items-center gap-1 transition" title="View File">
+                                        <Eye class="w-3.5 h-3.5" /> <span class="hidden sm:inline">View</span>
+                                    </button>
+                                    <button type="button" @click="removeFile(index)" class="text-red-500 hover:text-red-700 transition" title="Remove File">
+                                        <Trash2 class="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

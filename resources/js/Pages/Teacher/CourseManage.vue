@@ -8,7 +8,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import RichTextEditor from '@/Components/RichTextEditor.vue';
 import { 
     ChevronLeft, Calendar, Clock, Trophy, 
-    FileText, Paperclip, ExternalLink, Send, Undo2, Filter, Eye, Download, CheckCircle2 
+    FileText, Paperclip, ExternalLink, Send, Undo2, Filter, Eye, Download, CheckCircle2, Trash2 
 } from 'lucide-vue-next';
 
 const props = defineProps({ course: Object });
@@ -63,6 +63,13 @@ const formatForInput = (dateStr) => {
     return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 };
 
+// Calculate current local datetime to prevent past dates
+const minDateTime = computed(() => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+});
+
 const openResubmitModal = (lesson) => {
     lessonToResubmit.value = lesson;
     formResubmit.available_from = formatForInput(lesson.available_from) || formatForInput(new Date());
@@ -109,6 +116,24 @@ const formAssignment = useForm({
     files: [],
     hide_from_late: false 
 });
+
+// --- NEW ASSIGNMENT FILE HANDLING LOGIC ---
+const handleAssignmentFileSelect = (e) => {
+    const selectedFiles = Array.from(e.target.files);
+    formAssignment.files = [...formAssignment.files, ...selectedFiles];
+    e.target.value = ''; // Reset input to allow selecting same file again
+};
+
+const removeAssignmentFile = (index) => {
+    formAssignment.files.splice(index, 1);
+};
+
+const previewLocalFile = (file) => {
+    const fileUrl = URL.createObjectURL(file);
+    window.open(fileUrl, '_blank');
+};
+// ------------------------------------------
+
 
 // --- MATERIALS LOGIC ---
 const materialFilter = ref('active');
@@ -869,11 +894,11 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <InputLabel value="Due Date (Soft Deadline) *" class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1" />
-                            <input v-model="formAssignment.due_date" type="datetime-local" :class="inputClass" required />
+                            <input v-model="formAssignment.due_date" type="datetime-local" :min="minDateTime" :class="inputClass" required />
                         </div>
                         <div>
                             <InputLabel value="Closing Date (Hard Deadline)" class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1" />
-                            <input v-model="formAssignment.closing_date" type="datetime-local" :class="inputClass" />
+                            <input v-model="formAssignment.closing_date" type="datetime-local" :min="formAssignment.due_date || minDateTime" :class="inputClass" />
                         </div>
                     </div>
 
@@ -892,12 +917,26 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
                     <div>
                         <InputLabel value="Attachments (Optional)" class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1" />
-                        <input type="file" multiple @change="e => formAssignment.files = Array.from(e.target.files)" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[9px] file:font-bold file:uppercase file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-md p-1 transition" />
                         
-                        <div v-if="formAssignment.files && formAssignment.files.length > 0" class="mt-2 space-y-1 max-h-24 overflow-y-auto pr-1 no-scrollbar">
-                            <div v-for="(file, index) in formAssignment.files" :key="index" class="text-[9px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 p-1.5 rounded border border-slate-100 dark:border-slate-700">
-                                <svg class="w-3 h-3 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                                <span class="truncate">{{ file.name }}</span>
+                        <!-- Updated File Input to trigger handleAssignmentFileSelect -->
+                        <input type="file" multiple @change="handleAssignmentFileSelect" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[9px] file:font-bold file:uppercase file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-md p-1 transition" />
+                        
+                        <!-- Updated File Iteration with View/Remove buttons -->
+                        <div v-if="formAssignment.files && formAssignment.files.length > 0" class="mt-2 space-y-1 max-h-36 overflow-y-auto pr-1 custom-scrollbar">
+                            <div v-for="(file, index) in formAssignment.files" :key="index" class="text-[9px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between bg-slate-50 dark:bg-slate-800 p-1.5 rounded border border-slate-100 dark:border-slate-700 shadow-sm">
+                                <div class="flex items-center gap-1.5 truncate">
+                                    <svg class="w-3 h-3 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                                    <span class="truncate">{{ file.name }}</span>
+                                    <span class="shrink-0 text-slate-400 ml-1">({{ (file.size / 1024).toFixed(0) }} KB)</span>
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0 pl-2">
+                                    <button type="button" @click="previewLocalFile(file)" class="text-blue-600 hover:text-blue-400 flex items-center transition" title="View File">
+                                        <Eye class="w-3.5 h-3.5" />
+                                    </button>
+                                    <button type="button" @click="removeAssignmentFile(index)" class="text-red-500 hover:text-red-400 transition" title="Remove File">
+                                        <Trash2 class="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         <InputError class="mt-1 text-[9px]" :message="formAssignment.errors.files" />
@@ -956,4 +995,8 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.2); border-radius: 10px; }
 </style>

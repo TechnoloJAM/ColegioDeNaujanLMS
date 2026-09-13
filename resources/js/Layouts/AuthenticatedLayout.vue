@@ -386,7 +386,7 @@ defineExpose({
         <!-- HIDE FROM DEAN -->
         <div v-if="user.role !== 'dean'" class="hidden md:block fixed z-40 bottom-6 right-20 transition-all duration-300">
             <button @click="showingNotifications = !showingNotifications" 
-                    class="relative p-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full shadow-lg hover:shadow-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition hover:-translate-y-1 text-slate-600 dark:text-slate-300 focus:outline-none">
+                    class="relative p-3.5 bg-white dark:bg-slate-800 border border-black dark:border-white rounded-full shadow-lg hover:shadow-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition hover:-translate-y-1 text-slate-600 dark:text-slate-300 focus:outline-none">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                 <span v-if="unreadCount > 0" class="absolute top-0 right-0 w-3.5 h-3.5 bg-red-500 rounded-full border-2 border-white dark:border-slate-800 animate-pulse"></span>
             </button>
@@ -426,7 +426,7 @@ defineExpose({
             leave-active-class="transition ease-in duration-200 transform" leave-from-class="opacity-100 translate-y-0 scale-100" leave-to-class="opacity-0 translate-y-4 scale-95"
         >
             <button v-show="showScrollButton" @click="scrollToTop" 
-                 class="fixed z-50 bottom-20 md:bottom-6 right-4 md:right-8 p-3 bg-slate-800 dark:bg-slate-700 text-white rounded-full shadow-lg hover:bg-slate-700 dark:hover:bg-slate-600 transition-all hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-slate-400/50">
+                 class="fixed z-50 bottom-20 md:bottom-6 right-4 md:right-8 p-3 bg-slate-800 dark:bg-slate-700 text-white rounded-full shadow-lg hover:bg-slate-700 dark:hover:bg-slate-600 transition-all hover:-translate-y-1 focus:outline-none focus:ring-4 focus:ring-slate-400/50 border border-black dark:border-white">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18"></path></svg>
             </button>
         </transition>
