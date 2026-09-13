@@ -1,10 +1,11 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
-import { Download, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock } from 'lucide-vue-next';
+import { Download, ChevronDown, ChevronUp, ArrowUpDown, FileText, Clock, Search } from 'lucide-vue-next';
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 const props = defineProps({
     course: Object,
@@ -15,18 +16,19 @@ const props = defineProps({
 });
 
 // ==========================================
-// NEW: Hidden Courses Sync Logic
+// Hidden Courses Sync Logic & Search
 // ==========================================
 const page = usePage();
 const userId = page.props.auth.user.id;
 const storageKey = `lms_hidden_courses_${userId}`;
 const hiddenCourses = ref(JSON.parse(localStorage.getItem(storageKey)) || []);
+const searchQuery = ref('');
 
-// Filter out courses that the teacher has hidden globally
 const visibleCourses = computed(() => {
-    return props.courses ? props.courses.filter(c => !hiddenCourses.value.includes(c.id)) : [];
+    if (!props.courses) return [];
+    let filtered = props.courses.filter(c => !hiddenCourses.value.includes(c.id));
+    return filtered.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 });
-// ==========================================
 
 const expandedStudentId = ref(null);
 const sortOrder = ref('alpha_asc');
@@ -44,7 +46,6 @@ onMounted(() => {
 
 const hasErrors = computed(() => Object.keys(validationErrors.value).length > 0);
 
-// Helper function to prevent template interpolation bugs in VS Code
 const hasValidationError = (studentId, assignmentId) => {
     return Boolean(validationErrors.value[studentId + '_' + assignmentId]);
 };
@@ -58,7 +59,6 @@ const getSubmission = (student, assignmentId) => {
     return student.submissions.find(s => s.assignment_id === assignmentId);
 };
 
-// Accurately evaluates late enrollees based on Approval Time (Matching PHP Controller logic)
 const isLateEnrollee = (student, assignment) => {
     const desc = assignment.description || '';
     const isHiddenFromLate = desc.includes('[RESTRICT_LATE_STUDENTS]');
@@ -67,7 +67,6 @@ const isLateEnrollee = (student, assignment) => {
     if (!assignment.due_date) return false; 
     if (!student.pivot) return false;
     
-    // Uses updated_at (the moment the teacher clicked approve)
     const enrollmentDate = new Date(student.pivot.updated_at || student.pivot.created_at);
     const dueDate = new Date(assignment.due_date);
     
@@ -175,6 +174,7 @@ const calculatePS = (score, max) => {
 
 const processedStudents = computed(() => {
     if (!props.students) return [];
+    const query = searchQuery.value.toLowerCase().trim();
     
     let list = props.students.map(student => {
         let assignScore = 0, actScore = 0, ptScore = 0, totalScore = 0;
@@ -204,6 +204,10 @@ const processedStudents = computed(() => {
         };
     });
 
+    if (query) {
+        list = list.filter(student => student.name.toLowerCase().includes(query));
+    }
+
     list.sort((a, b) => {
         if (sortOrder.value === 'alpha_asc') return a.name.localeCompare(b.name);
         if (sortOrder.value === 'alpha_desc') return b.name.localeCompare(a.name);
@@ -215,14 +219,23 @@ const processedStudents = computed(() => {
     return list;
 });
 
-// UPDATED: Filter Export Data to exclude hidden courses
 const processedAllExportData = computed(() => {
     if (!props.all_export_data) return [];
+    const query = searchQuery.value.toLowerCase().trim();
     
-    return props.all_export_data
-        .filter(c => !hiddenCourses.value.includes(c.id)) // HIDE IN MEGA VIEW
+    let result = props.all_export_data
+        .filter(c => !hiddenCourses.value.includes(c.id))
         .map(c => {
-            let sortedStudents = [...c.students].sort((a, b) => {
+            const courseMatches = c.title.toLowerCase().includes(query);
+            let filteredStudents = c.students;
+            
+            if (query) {
+                filteredStudents = filteredStudents.filter(s => 
+                    courseMatches || s.name.toLowerCase().includes(query)
+                );
+            }
+
+            let sortedStudents = [...filteredStudents].sort((a, b) => {
                 if (sortOrder.value === 'alpha_asc') return a.name.localeCompare(b.name);
                 if (sortOrder.value === 'alpha_desc') return b.name.localeCompare(a.name);
                 if (sortOrder.value === 'avg_desc') return b.percentage - a.percentage;
@@ -230,7 +243,12 @@ const processedAllExportData = computed(() => {
                 return 0;
             });
             return { ...c, students: sortedStudents };
-        });
+        })
+        .filter(c => query === '' || c.title.toLowerCase().includes(query) || c.students.length > 0);
+
+    result.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+    return result;
 });
 
 const switchCourse = (e) => {
@@ -239,9 +257,20 @@ const switchCourse = (e) => {
     }
 };
 
-const buildExcelSheet = (title, assignments, students) => {
-    let maxAssign = 0, maxAct = 0, maxPt = 0, totalPts = 0;
+
+// ==========================================
+// EXCELJS: CLEAN MINIMAL EXPORT (LEFT ALIGNED)
+// ==========================================
+const buildExcelSheet = (workbook, title, assignments, students) => {
+    const sheetName = title.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
     
+    // Page Setup: Freeze row 1 (headers) and column 1 (student names)
+    const sheet = workbook.addWorksheet(sheetName, {
+        views: [{ state: 'frozen', xSplit: 1, ySplit: 1 }]
+    });
+
+    // Calculations for Max Scores
+    let maxAssign = 0, maxAct = 0, maxPt = 0, totalPts = 0;
     assignments.forEach(task => {
         const points = Number(task.points) || 0;
         totalPts += points;
@@ -251,37 +280,62 @@ const buildExcelSheet = (title, assignments, students) => {
     });
 
     const taskHeaders = assignments.map(a => a.title);
-    const taskMaxes = assignments.map(a => String(a.points));
+    const taskMaxes = assignments.map(a => Number(a.points) || 0);
 
-    const wsData = [
-        ['OFFICIAL CLASS RECORD'], 
-        [], 
-        ['Course:', title], 
-        [], 
-        [
-            'Name of Student', 
-            ...taskHeaders, 
-            'Assign (Raw)', 'Assign PS (%)', 
-            'Activities (Raw)', 'Activity PS (%)', 
-            'PT (Raw)', 'PT PS (%)', 
-            'Total Raw', 'Quarterly Grade (%)'
-        ],
-        [
-            'HIGHEST POSSIBLE SCORE', 
-            ...taskMaxes, 
-            String(maxAssign), '100%', 
-            String(maxAct), '100%', 
-            String(maxPt), '100%', 
-            String(totalPts), '100%'
-        ]
+    // Setup Columns with basic widths
+    const columns = [{ width: 30 }]; // Student Name Column
+    assignments.forEach(() => columns.push({ width: 15 }));
+    columns.push(
+        { width: 15 }, { width: 15 }, // Assign Raw / PS
+        { width: 15 }, { width: 15 }, // Act Raw / PS
+        { width: 15 }, { width: 15 }, // PT Raw / PS
+        { width: 15 }, { width: 22 }  // Total Raw / Overall Grade
+    );
+    sheet.columns = columns;
+
+    // 1. Main Data Headers (Row 1)
+    const headerRowData = [
+        'Student Name',
+        ...taskHeaders,
+        'Assign (Raw)', 'Assign PS (%)',
+        'Activity (Raw)', 'Activity PS (%)',
+        'PT (Raw)', 'PT PS (%)',
+        'Total Raw', 'Quarterly Grade (%)'
     ];
+    const headerRow = sheet.addRow(headerRowData);
+    headerRow.eachCell((cell) => {
+        cell.font = { name: 'Arial', bold: true, size: 10 };
+        cell.alignment = { horizontal: 'left' };
+    });
 
-    if (students.length > 0) {
+    // 2. Max Possible Score Subheader (Row 2)
+    const maxScoreRowData = [
+        'HIGHEST POSSIBLE SCORE',
+        ...taskMaxes,
+        maxAssign, '100%',
+        maxAct, '100%',
+        maxPt, '100%',
+        totalPts, '100%'
+    ];
+    const maxRow = sheet.addRow(maxScoreRowData);
+    maxRow.eachCell((cell) => {
+        cell.font = { name: 'Arial', bold: true, size: 10 };
+        cell.alignment = { horizontal: 'left' };
+    });
+
+    // 3. Data Population
+    if (students.length === 0) {
+        const emptyRow = sheet.addRow(['No students enrolled.']);
+        emptyRow.eachCell((cell) => {
+            cell.font = { name: 'Arial', size: 10 };
+            cell.alignment = { horizontal: 'left' };
+        });
+    } else {
         const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name));
-
-        sortedStudents.forEach(student => {
+        
+        sortedStudents.forEach((student) => {
             let assignScore = 0, actScore = 0, ptScore = 0, totalScore = 0;
-            const row = [student.name];
+            const rowData = [student.name];
 
             assignments.forEach(task => {
                 const val = getInputValue(student, task.id);
@@ -292,7 +346,7 @@ const buildExcelSheet = (title, assignments, students) => {
                 else if (task.type === 'activity') actScore += pts;
                 else if (task.type === 'performance_task') ptScore += pts;
 
-                row.push((val !== '' && val !== null) ? String(val) : '0');
+                rowData.push((val !== '' && val !== null) ? Number(val) : 0);
             });
 
             const assignPS = maxAssign > 0 ? ((assignScore / maxAssign) * 100).toFixed(1) : '0.0';
@@ -300,46 +354,48 @@ const buildExcelSheet = (title, assignments, students) => {
             const ptPS = maxPt > 0 ? ((ptScore / maxPt) * 100).toFixed(1) : '0.0';
             const numericAverage = totalPts > 0 ? ((totalScore / totalPts) * 100).toFixed(1) : '0.0';
 
-            row.push(
-                String(assignScore), assignPS + '%',
-                String(actScore), actPS + '%',
-                String(ptScore), ptPS + '%',
-                String(totalScore), numericAverage + '%'
+            rowData.push(
+                assignScore, `${assignPS}%`,
+                actScore, `${actPS}%`,
+                ptScore, `${ptPS}%`,
+                totalScore, `${numericAverage}%`
             );
 
-            wsData.push(row);
+            const row = sheet.addRow(rowData);
+            row.eachCell((cell) => {
+                cell.font = { name: 'Arial', size: 10 };
+                cell.alignment = { horizontal: 'left' };
+            });
         });
-    } else {
-        wsData.push(['No students enrolled.']);
     }
-
-    return XLSX.utils.aoa_to_sheet(wsData);
 };
 
-const downloadExcel = () => {
-    const wb = XLSX.utils.book_new();
+const downloadExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'LMS Gradebook System';
+    workbook.created = new Date();
 
     if (props.course && props.course.id === 'all') {
         const exportData = processedAllExportData.value;
         if (!exportData || exportData.length === 0) {
-            alert("No data available to export. (Make sure you haven't hidden all your classes!)");
+            alert("No data available to export. (Ensure filters aren't hiding data).");
             return;
         }
 
         exportData.forEach(courseData => {
-            const ws = buildExcelSheet(courseData.title, courseData.assignments || [], courseData.students || []);
-            let safeSheetName = courseData.title.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
-            XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
+            buildExcelSheet(workbook, courseData.title, courseData.assignments || [], courseData.students || []);
         });
 
-        XLSX.writeFile(wb, `Complete_Teacher_Gradebook.xlsx`);
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer]), `Academic_Record_Complete.xlsx`);
     } else {
         if (!props.course || !props.assignments || !props.students) return;
-        const ws = buildExcelSheet(props.course.title, props.assignments, processedStudents.value);
-        let safeSheetName = props.course.title.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
-        XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
         
-        XLSX.writeFile(wb, `${props.course.title.replace(/\s+/g, '_')}_Gradebook.xlsx`);
+        buildExcelSheet(workbook, props.course.title, props.assignments, processedStudents.value);
+        
+        const buffer = await workbook.xlsx.writeBuffer();
+        const safeTitle = props.course.title.replace(/\s+/g, '_');
+        saveAs(new Blob([buffer]), `Academic_Record_${safeTitle}.xlsx`);
     }
 };
 </script>
@@ -350,19 +406,28 @@ const downloadExcel = () => {
     <AuthenticatedLayout>
         <div class="max-w-[100vw] mx-auto pb-12 px-2 sm:px-4">
             
-            <div v-if="course" class="flex flex-col md:flex-row justify-between md:items-end gap-2 mb-3 sm:mb-4 border-b border-slate-100 dark:border-slate-800 pb-2">
-                <div class="w-full md:w-auto">
+            <div v-if="course" class="flex flex-col xl:flex-row justify-between xl:items-end gap-3 mb-3 sm:mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <!-- TOP HEADER ALIGNED HORIZONTALLY -->
+                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full xl:w-auto">
                     <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5 sm:gap-2 leading-tight">
                         Gradebook
-                        <!-- UPDATED: Uses visibleCourses -->
+                        <!-- Default All Courses selection fallback -->
                         <select @change="switchCourse" class="text-[10px] sm:text-xs font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded py-1 pl-2 pr-6 focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm transition max-w-[180px] sm:max-w-none truncate">
-                            <option value="all" :selected="course.id === 'all'">All Courses</option>
+                            <option value="all" :selected="!course.id || course.id === 'all'">All Courses</option>
                             <option v-for="c in visibleCourses" :key="c.id" :value="c.id" :selected="c.id === course.id">{{ c.title }}</option>
                         </select>
                     </h1>
+                    
+                    <!-- Search Bar aligned alongside filter -->
+                    <div class="relative w-full sm:w-64 shrink-0">
+                        <div class="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                            <Search class="h-3.5 w-3.5 text-slate-400" />
+                        </div>
+                        <input v-model="searchQuery" type="text" placeholder="Search students or courses..." class="w-full h-8 pl-7 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs shadow-sm transition-colors" />
+                    </div>
                 </div>
                 
-                <div class="flex items-center gap-1.5 w-full md:w-auto shrink-0 flex-wrap">
+                <div class="flex items-center gap-1.5 w-full xl:w-auto shrink-0 flex-wrap">
                     
                     <!-- STUDENT SORT ORDER -->
                     <div class="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded shadow-sm flex-1 md:flex-none">
@@ -399,7 +464,8 @@ const downloadExcel = () => {
             <!-- VIEW: ALL COURSES SELECTED (MEGA VIEW) -->
             <div v-if="course && course.id === 'all'" class="space-y-4 sm:space-y-6 mt-3 sm:mt-4">
                 <div v-if="processedAllExportData.length === 0" class="text-center py-16 text-slate-500 font-bold uppercase tracking-widest text-xs">
-                    You have hidden all your active classes. Unhide them to view their gradebooks.
+                    <span v-if="searchQuery">No matching students or courses found.</span>
+                    <span v-else>You have hidden all your active classes. Unhide them to view their gradebooks.</span>
                 </div>
                 
                 <div v-for="c in processedAllExportData" :key="c.id" class="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -834,7 +900,10 @@ const downloadExcel = () => {
             <!-- FALLBACK IF NO DATA IS AVAILABLE -->
             <div v-else-if="course && (!course.id || course.id !== 'all')" class="mt-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-8 text-center flex flex-col items-center justify-center">
                 <h3 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">No Data Available</h3>
-                <p class="text-[10px] text-slate-500 mt-1 uppercase font-bold tracking-widest">There are currently no students or assignments to display.</p>
+                <p class="text-[10px] text-slate-500 mt-1 uppercase font-bold tracking-widest">
+                    <span v-if="searchQuery">No matching students found for "{{ searchQuery }}"</span>
+                    <span v-else>There are currently no students or assignments to display.</span>
+                </p>
             </div>
             
         </div>
