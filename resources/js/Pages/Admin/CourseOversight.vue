@@ -304,8 +304,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 <template>
     <Head title="Course Oversight" />
     <AuthenticatedLayout>
-
-        <img :src="getFileUrl(course.thumbnail)" alt="Course Thumbnail" />
         
         <!-- MOBILE FLOATING FAB: Placed perfectly above chat widget, with black/white borders & Tooltips -->
         <div class="md:hidden fixed bottom-[150px] right-4 z-[999] flex flex-col gap-2 items-center pointer-events-none">
@@ -465,7 +463,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                     <td class="px-2 py-1.5 cursor-pointer" @click="toggleSelection(course.id)">
                                         <div class="flex items-center gap-2">
                                             <div v-if="course.thumbnail" class="w-5 h-5 sm:w-6 sm:h-6 rounded bg-slate-200 shrink-0 overflow-hidden">
-                                                <img :src="course.thumbnail" class="w-full h-full object-cover" />
+                                                <img :src="getFileUrl(course.thumbnail)" class="w-full h-full object-cover" />
                                             </div>
                                             <div v-else class="w-5 h-5 sm:w-6 sm:h-6 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center shrink-0">
                                                 <span class="text-[8px] font-black uppercase">{{ formatYearLevel(course.difficulty_level).charAt(0) }}Y</span>
@@ -547,7 +545,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         <input type="checkbox" :checked="selectedIds.includes(course.id)" @change="toggleSelection(course.id)" class="rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 dark:bg-slate-800 cursor-pointer shadow-sm shrink-0 w-3.5 h-3.5" />
                         
                         <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-slate-200 dark:bg-slate-700 shrink-0 overflow-hidden shadow-sm flex items-center justify-center">
-                            <img v-if="course.thumbnail" :src="course.thumbnail" class="w-full h-full object-cover" />
+                            <img v-if="course.thumbnail" :src="getFileUrl(course.thumbnail)" class="w-full h-full object-cover" />
                             <span v-else class="text-[8px] sm:text-[10px] font-black text-blue-600 dark:text-blue-400">{{ formatYearLevel(course.difficulty_level).charAt(0) }}Y</span>
                         </div>
                         
