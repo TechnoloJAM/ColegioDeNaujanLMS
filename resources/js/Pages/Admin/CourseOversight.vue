@@ -8,8 +8,6 @@ import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 import * as XLSX from 'xlsx';
 import { Plus, Download, Search, Filter, BookOpen, Calendar, Trash2, ShieldAlert, Users } from 'lucide-vue-next';
-import { usePage } from '@inertiajs/vue3';
-
 
 const getFileUrl = (path) => {
     if (!path) return '';
