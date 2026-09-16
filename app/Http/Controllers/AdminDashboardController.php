@@ -16,6 +16,7 @@ use Inertia\Inertia;
 use App\Models\Setting;
 use Carbon\Carbon;
 use App\Models\Department;
+use App\Models\GlobalEvent;
 
 class AdminDashboardController extends Controller
 {
@@ -764,18 +765,27 @@ class AdminDashboardController extends Controller
         return redirect()->route('teacher.courses.show', $course->id);
     }
 
-    // NEW: Broadcast Logic
     public function storeBroadcast(Request $request)
     {
         $request->validate([
-            'subject' => 'required|string|max:255',
-            'message' => 'required|string',
-            'target' => 'required|string',
+            'title' => 'required|string|max:255',
+            'description' => 'required|string',
+            'audience' => 'required|in:all,teacher,student',
+            'type' => 'required|in:academic,holiday,maintenance,event',
+            'start_date' => 'required|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
         ]);
         
-        // This is a placeholder for your actual notification/broadcast logic
-        // e.g., Notification::send($users, new SystemBroadcast($request->subject, $request->message));
+        GlobalEvent::create([
+            'user_id' => auth()->id(),
+            'title' => $request->title,
+            'description' => $request->description,
+            'audience' => $request->audience,
+            'type' => $request->type,
+            'start_date' => $request->start_date,
+            'end_date' => $request->end_date ?? $request->start_date,
+        ]);
 
-        return back()->with('success', 'Broadcast message sent successfully to ' . ucfirst($request->target) . '!');
+        return back()->with('success', 'Event successfully posted to the Calendar!');
     }
 }
