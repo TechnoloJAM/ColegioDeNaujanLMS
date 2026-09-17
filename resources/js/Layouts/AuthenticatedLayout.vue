@@ -253,11 +253,11 @@ defineExpose({
         <div class="flex flex-1 min-h-0">
             <aside class="sidebar hidden md:flex flex-col w-56 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 fixed z-20 transition-colors duration-300 shadow-sm"
                    :class="isImpersonating ? 'top-[52px] h-[calc(100vh-52px)]' : 'top-0 h-screen'">
+                
+                <!-- UPDATE: Desktop Sidebar Logo -->
                 <div class="h-16 flex items-center px-5 border-b border-slate-100 dark:border-slate-800/60 shrink-0">
                     <span class="text-slate-900 dark:text-white font-black text-base tracking-tight flex items-center gap-2">
-                        <span class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z"></path></svg>
-                        </span>
+                        <img src="/images/Logo2.png" alt="Colegio de Naujan Logo" class="w-8 h-8 object-contain drop-shadow-sm shrink-0" />
                         CDN LMS
                     </span>
                 </div>
@@ -303,10 +303,10 @@ defineExpose({
 
             <div class="flex-1 md:ml-56 flex flex-col min-w-0">
                 <header class="md:hidden bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 min-h-[56px] flex items-center justify-between px-3 sticky top-0 z-30 transition-colors shrink-0 shadow-sm">
+                    
+                    <!-- UPDATE: Mobile Header Logo -->
                     <div class="flex items-center gap-2 text-slate-900 dark:text-white min-w-0">
-                        <span class="w-7 h-7 rounded bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z"></path></svg>
-                        </span>
+                        <img src="/images/Logo2.png" alt="Colegio de Naujan Logo" class="w-7 h-7 object-contain drop-shadow-sm shrink-0" />
                         <span class="font-black text-sm uppercase tracking-tight truncate">CDN LMS</span>
                     </div>
 

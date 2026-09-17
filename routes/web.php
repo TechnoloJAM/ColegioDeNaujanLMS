@@ -13,6 +13,13 @@ use App\Http\Controllers\AIChatController;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\DeanDashboardController;
+
+// ADDED: Model imports for the homepage statistics
+use App\Models\User;
+use App\Models\Course;
+use App\Models\Lesson;
+use App\Models\Assignment;
+
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -24,6 +31,21 @@ Route::get('/', function () {
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
         'status' => session('status'),
+        
+        // Dynamic CDN Community Data
+        'studentsCount' => User::where('role', 'student')
+                               ->where('status', 'active')
+                               ->count(),
+                               
+        'teachersCount' => User::where('role', 'teacher')
+                               ->where('status', 'active')
+                               ->count(),
+                               
+        'coursesCount' => Course::where('is_published', true)
+                                ->count(),
+                                
+        'resourcesCount' => Lesson::where('approval_status', 'approved')->count() 
+                            + Assignment::count(),
     ]);
 });
 
@@ -181,8 +203,8 @@ Route::middleware(['auth', 'verified', 'role:admin'])->prefix('admin')->name('ad
 // DEAN ROUTES
 Route::middleware(['auth', 'verified', 'role:dean'])->prefix('dean')->name('dean.')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\DeanDashboardController::class, 'index'])->name('dashboard');
-    Route::get('/faculty', [\App\Http\Controllers\DeanDashboardController::class, 'faculty'])->name('faculty'); // NEW
-    Route::get('/audit', [\App\Http\Controllers\DeanDashboardController::class, 'audit'])->name('audit'); // NEW
+    Route::get('/faculty', [\App\Http\Controllers\DeanDashboardController::class, 'faculty'])->name('faculty');
+    Route::get('/audit', [\App\Http\Controllers\DeanDashboardController::class, 'audit'])->name('audit');
     Route::get('/courses/{course}/audit', [\App\Http\Controllers\CourseController::class, 'show'])->name('courses.audit');
 });
 
