@@ -21,6 +21,7 @@ const props = defineProps({
 const page = usePage();
 const userId = page.props.auth.user.id;
 const storageKey = `lms_hidden_courses_${userId}`;
+
 const hiddenCourses = ref(JSON.parse(localStorage.getItem(storageKey)) || []);
 const searchQuery = ref('');
 
@@ -32,6 +33,7 @@ const visibleCourses = computed(() => {
 
 const expandedStudentId = ref(null);
 const sortOrder = ref('alpha_asc');
+
 const isEditMode = ref(false);
 const isSaving = ref(false);
 const pendingGrades = ref({});
@@ -167,6 +169,7 @@ const toggleEditMode = async () => {
             const requests = keys.map(key => {
                 const data = pendingGrades.value[key];
                 const gradeVal = data.grade !== '' ? parseFloat(data.grade) : null;
+
                 return axios.post(route('teacher.gradebook.autosave', data.course_id), {
                     student_id: data.student_id,
                     assignment_id: data.assignment_id,
@@ -208,6 +211,7 @@ const calculatePS = (score, max) => {
 
 const processedStudents = computed(() => {
     if (!props.students) return [];
+
     const query = searchQuery.value.toLowerCase().trim();
     
     let list = props.students.map(student => {
@@ -255,6 +259,7 @@ const processedStudents = computed(() => {
 
 const processedAllExportData = computed(() => {
     if (!props.all_export_data) return [];
+    
     const query = searchQuery.value.toLowerCase().trim();
     
     let result = props.all_export_data
@@ -276,6 +281,7 @@ const processedAllExportData = computed(() => {
                 if (sortOrder.value === 'avg_asc') return a.percentage - b.percentage;
                 return 0;
             });
+
             return { ...c, students: sortedStudents };
         })
         .filter(c => query === '' || c.title.toLowerCase().includes(query) || c.students.length > 0);
@@ -290,7 +296,6 @@ const switchCourse = (e) => {
         router.visit(route('teacher.gradebook.index', e.target.value));
     }
 };
-
 
 // ==========================================
 // EXCELJS: CLEAN MINIMAL EXPORT (LEFT ALIGNED)
@@ -551,6 +556,7 @@ const downloadExcel = async () => {
                                         </div>
                                         <span class="truncate">{{ student.name }}</span>
                                     </td>
+
                                     <td v-for="a in c.assignments" :key="a.id" class="px-1 py-1 border-r border-slate-100 dark:border-slate-800 relative" :class="!isEditMode ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''">
                                         <template v-if="getSubmission(student, a.id)">
                                             <div class="flex items-center justify-center gap-1">
@@ -560,11 +566,11 @@ const downloadExcel = async () => {
                                                 </a>
                                                 <div class="flex-1 px-0.5">
                                                     <template v-if="isEditMode">
-                                                        <input 
-                                                             type="number" 
-                                                             step="0.01" 
-                                                             min="0" 
-                                                             :max="a.points"
+                                                        <input
+                                                              type="number"
+                                                              step="0.01"
+                                                              min="0"
+                                                              :max="a.points"
                                                             :value="getInputValue(student, a.id)"
                                                             @input="updatePendingGrade(student.id, a.id, a.points, c.id, $event)"
                                                             class="w-full text-center border-0 bg-transparent focus:ring-1 focus:ring-inset rounded text-[10px] font-bold transition-colors py-0.5 px-0 h-5"
@@ -586,6 +592,7 @@ const downloadExcel = async () => {
                                             </div>
                                         </template>
                                     </td>
+
                                     <td class="px-1.5 py-1 text-center border-r border-slate-200 dark:border-slate-700 bg-blue-50/10 dark:bg-blue-900/5">
                                         <div class="font-black text-blue-600 dark:text-blue-400 text-[10px]">{{ student.assignment_score > 0 ? ((student.assignment_score / c.max_assignment) * 100).toFixed(1) : 0 }}%</div>
                                         <div class="font-bold text-slate-500 dark:text-slate-400 text-[7px] mt-0.5">{{ student.assignment_score }} Raw</div>
@@ -614,12 +621,11 @@ const downloadExcel = async () => {
 
                     <!-- MOBILE MEGA VIEW ACCORDION -->
                     <div class="md:hidden flex flex-col gap-1 p-1 bg-slate-50/50 dark:bg-slate-900/30">
-                        <div v-if="isEditMode" class="p-1 text-center text-[9px] font-black uppercase tracking-widest rounded border shadow-sm mb-0.5 transition-colors" 
-                             :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
+                        <div v-if="isEditMode" class="p-1 text-center text-[9px] font-black uppercase tracking-widest rounded border shadow-sm mb-0.5 transition-colors"
+                              :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
                             <span v-if="hasErrors">Error: Exceeds max score</span>
                             <span v-else>Edit Mode Active</span>
                         </div>
-
                         <div v-for="(student, index) in c.students" :key="student.id" class="bg-white dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
                             <button @click="toggleStudent(student.id + '-' + c.id)" class="w-full flex items-center justify-between px-2 py-1.5 focus:outline-none transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                 <div class="flex items-center gap-1.5 min-w-0 pr-2">
@@ -638,7 +644,7 @@ const downloadExcel = async () => {
                             </button>
                             
                             <div v-show="expandedStudentId === (student.id + '-' + c.id)" class="p-1.5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
-                                
+                                 
                                 <div v-for="a in c.assignments" :key="a.id" class="flex items-center justify-between bg-white dark:bg-slate-800 p-1.5 rounded border border-slate-100 dark:border-slate-700 shadow-sm mb-1.5">
                                      <div class="flex flex-col min-w-0 flex-1 pr-1">
                                          <div class="flex items-center gap-1 min-w-0">
@@ -646,7 +652,7 @@ const downloadExcel = async () => {
                                              <span class="text-[7px] font-black text-blue-500 uppercase tracking-widest shrink-0">Max {{ a.points }}</span>
                                          </div>
                                      </div>
-                                      
+                                        
                                      <div class="flex items-center gap-1 w-auto shrink-0">
                                          <template v-if="getSubmission(student, a.id)">
                                              <a :href="getSubmissionLink(getSubmission(student, a.id), a.id)" target="_blank" title="View Submission"
@@ -655,12 +661,12 @@ const downloadExcel = async () => {
                                              </a>
                                               
                                              <div class="w-12 shrink-0">
-                                                 <input 
-                                                      v-if="isEditMode"
-                                                     type="number" 
-                                                      step="0.01" 
-                                                      min="0" 
-                                                      :max="a.points"
+                                                 <input
+                                                       v-if="isEditMode"
+                                                     type="number"
+                                                       step="0.01"
+                                                       min="0"
+                                                       :max="a.points"
                                                      :value="getInputValue(student, a.id)"
                                                      @input="updatePendingGrade(student.id, a.id, a.points, c.id, $event)"
                                                      class="w-full h-5 text-center border focus:ring-1 focus:ring-inset rounded text-[9px] font-black transition-colors py-0 px-1 shadow-inner"
@@ -712,8 +718,8 @@ const downloadExcel = async () => {
                 <!-- DESKTOP SINGLE COURSE TABLE -->
                 <div class="hidden md:block bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-x-auto custom-scrollbar relative">
                     
-                    <div v-if="isEditMode" class="p-1.5 text-center text-[10px] font-black uppercase tracking-widest border-b transition-colors" 
-                         :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
+                    <div v-if="isEditMode" class="p-1.5 text-center text-[10px] font-black uppercase tracking-widest border-b transition-colors"
+                          :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
                         <span v-if="hasErrors">Cannot Save: A grade exceeds the maximum score!</span>
                         <span v-else>Edit Mode Active: Click "Save Changes" when finished.</span>
                     </div>
@@ -769,11 +775,11 @@ const downloadExcel = async () => {
                                             </a>
                                             <div class="flex-1 px-0.5">
                                                 <template v-if="isEditMode">
-                                                    <input 
-                                                         type="number" 
-                                                         step="0.01" 
-                                                         min="0" 
-                                                         :max="a.points"
+                                                    <input
+                                                          type="number"
+                                                          step="0.01"
+                                                          min="0"
+                                                          :max="a.points"
                                                         :value="getInputValue(student, a.id)"
                                                         @input="updatePendingGrade(student.id, a.id, a.points, course.id, $event)"
                                                         class="w-full text-center border-0 bg-transparent focus:ring-1 focus:ring-inset rounded text-[10px] font-bold transition-colors py-0.5 px-0 h-5"
@@ -834,8 +840,8 @@ const downloadExcel = async () => {
                 <!-- MOBILE SINGLE COURSE VIEW (Ultra Compact Accordion) -->
                 <div class="md:hidden flex flex-col gap-1.5">
                     
-                    <div v-if="isEditMode" class="p-1.5 text-center text-[9px] font-black uppercase tracking-widest rounded border shadow-sm mb-1 transition-colors" 
-                         :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
+                    <div v-if="isEditMode" class="p-1.5 text-center text-[9px] font-black uppercase tracking-widest rounded border shadow-sm mb-1 transition-colors"
+                          :class="hasErrors ? 'bg-red-50 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800' : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'">
                         <span v-if="hasErrors">Error: Exceeds max score</span>
                         <span v-else>Edit Mode Active</span>
                     </div>
@@ -873,21 +879,21 @@ const downloadExcel = async () => {
                                         <span class="text-[7px] font-black text-blue-500 uppercase tracking-widest shrink-0">Max {{ a.points }}</span>
                                     </div>
                                 </div>
-                                 
+                                  
                                 <div class="flex items-center gap-1 w-auto shrink-0">
                                     <template v-if="getSubmission(student, a.id)">
                                         <a :href="getSubmissionLink(getSubmission(student, a.id), a.id)" target="_blank" title="View Submission"
                                             class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition bg-white dark:bg-slate-800 p-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
                                             <FileText class="w-3 h-3" />
                                         </a>
-                                         
+                                          
                                         <div class="w-12 shrink-0">
-                                            <input 
-                                                 v-if="isEditMode"
-                                                type="number" 
-                                                 step="0.01" 
-                                                 min="0" 
-                                                 :max="a.points"
+                                            <input
+                                                  v-if="isEditMode"
+                                                type="number"
+                                                  step="0.01"
+                                                  min="0"
+                                                  :max="a.points"
                                                 :value="getInputValue(student, a.id)"
                                                 @input="updatePendingGrade(student.id, a.id, a.points, course.id, $event)"
                                                 class="w-full h-5 text-center border focus:ring-1 focus:ring-inset rounded text-[9px] font-black transition-colors py-0 px-1 shadow-inner"
@@ -913,21 +919,21 @@ const downloadExcel = async () => {
                             <div class="col-span-1 sm:col-span-2 grid grid-cols-3 gap-1.5 mt-1 pt-1 border-t border-slate-100 dark:border-slate-700">
                                 <div class="text-center bg-blue-50/50 dark:bg-blue-900/10 p-1.5 rounded border border-blue-100 dark:border-blue-800/30">
                                     <span class="block text-[7px] font-black uppercase text-blue-500">Ass. PS</span>
-                                    <span class="block text-[10px] font-black text-blue-600 dark:text-blue-400 mt-0.5">{{ student.assignment_score > 0 ? ((student.assignment_score / c.max_assignment) * 100).toFixed(1) : 0 }}%</span>
-                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.assignment_score }}/{{ c.max_assignment }}</span>
+                                    <span class="block text-[10px] font-black text-blue-600 dark:text-blue-400 mt-0.5">{{ student.assignPS }}%</span>
+                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.assignScore }}/{{ maxCategoryPoints.assign }}</span>
                                 </div>
                                 <div class="text-center bg-purple-50/50 dark:bg-purple-900/10 p-1.5 rounded border border-purple-100 dark:border-purple-800/30">
                                     <span class="block text-[7px] font-black uppercase text-purple-500">Act. PS</span>
                                     <span class="block text-[10px] font-black text-purple-600 dark:text-purple-400 mt-0.5">{{ student.actPS }}%</span>
-                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.activity_score }}/{{ c.max_activity }}</span>
+                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.actScore }}/{{ maxCategoryPoints.act }}</span>
                                 </div>
                                 <div class="text-center bg-orange-50/50 dark:bg-orange-900/10 p-1.5 rounded border border-orange-100 dark:border-orange-800/30">
                                     <span class="block text-[7px] font-black uppercase text-orange-500">PT. PS</span>
-                                    <span class="block text-[10px] font-black text-orange-600 dark:text-orange-400 mt-0.5">{{ student.pt_score > 0 ? ((student.pt_score / c.max_pt) * 100).toFixed(1) : 0 }}%</span>
-                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.pt_score }}/{{ c.max_pt }}</span>
+                                    <span class="block text-[10px] font-black text-orange-600 dark:text-orange-400 mt-0.5">{{ student.ptPS }}%</span>
+                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.ptScore }}/{{ maxCategoryPoints.pt }}</span>
                                 </div>
                             </div>
-                            
+
                             <div v-if="assignments.length === 0" class="text-center py-2 text-slate-400 text-[8px] uppercase font-black tracking-widest col-span-1 sm:col-span-2">No assignments to grade.</div>
                         </div>
                     </div>
@@ -952,6 +958,7 @@ const downloadExcel = async () => {
 .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
 input[type="number"]::-webkit-inner-spin-button, 
 input[type="number"]::-webkit-outer-spin-button { 
     -webkit-appearance: none; 
