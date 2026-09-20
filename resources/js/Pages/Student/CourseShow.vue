@@ -6,7 +6,7 @@ import { ref, onMounted, nextTick, computed, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
 import { 
     ChevronLeft, Calendar, Clock, Trophy, 
-    FileText, Paperclip, ExternalLink, Send, Undo2, Filter, Eye, Download, CheckCircle2
+    FileText, Paperclip, ExternalLink, Send, Undo2, Filter, Eye, Download, CheckCircle2, AlertTriangle, X
 } from 'lucide-vue-next';
 
 const props = defineProps({ course: Object });
@@ -14,7 +14,7 @@ const currentUser = usePage().props.auth.user;
 
 const activeTab = ref('announcements');
 const assignmentFilter = ref('upcoming'); 
-const sortOrder = ref('asc'); // Default: Closest deadline to farthest deadline
+const sortOrder = ref('asc');
 const highlightedId = ref(null);
 
 const showSubmitModal = ref(false);
@@ -24,7 +24,7 @@ const formComment = useForm({ content: '' });
 const formSubmission = useForm({ files: [], text_content: '' });
 
 const getFileUrl = (path) => {
-    if (!path) return '';
+    if (!path || typeof path !== 'string') return '';
     const cleanPath = path.replace(/^\/storage\//, '');
     return `${usePage().props.env.AWS_URL}/${cleanPath}`;
 };
@@ -32,9 +32,47 @@ const getFileUrl = (path) => {
 const showMaterialPreview = ref(false);
 const selectedMaterialPath = ref(null);
 
-const cleanDescription = (text) => {
-    return text ? text.replace('[RESTRICT_LATE_STUDENTS]', '').trim() : '';
+// Cleans internal system tags and linkifies URLs
+const formatDescription = (text) => {
+    if (!text) return 'No instructions provided.';
+    let clean = text.replace(/\[RESTRICT_LATE_STUDENTS\]/gi, '').trim();
+    if (!clean) return 'No instructions provided.';
+    return clean.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline font-bold">$1</a>');
 };
+
+// Safe JSON / Nested Array unpacker
+const getPaths = (paths) => {
+    if (!paths) return [];
+    let parsed = paths;
+    if (typeof paths === 'string') {
+        try {
+            parsed = JSON.parse(paths);
+        } catch (e) {
+            return [paths];
+        }
+    }
+    if (typeof parsed === 'string') {
+        try {
+            parsed = JSON.parse(parsed);
+        } catch (e) {
+            return [parsed];
+        }
+    }
+    if (Array.isArray(parsed)) {
+        return parsed.flat(Infinity).filter(p => typeof p === 'string' && p.trim() !== '');
+    }
+    return typeof parsed === 'string' ? [parsed] : [];
+};
+
+// Safe Filename Extractor
+const getFileName = (path) => {
+    if (!path || typeof path !== 'string') return 'Attached File';
+    const clean = path.split('?')[0];
+    return clean.split('/').pop() || 'Attached File';
+};
+
+const isPdf = (path) => typeof path === 'string' && path.toLowerCase().endsWith('.pdf');
+const isImage = (path) => typeof path === 'string' && Boolean(path.match(/\.(jpeg|jpg|png|gif|webp)$/i));
 
 watch(activeTab, (newTab) => {
     const url = new URL(window.location.href);
@@ -78,20 +116,16 @@ const formatRichText = (htmlContent) => {
     return processed;
 };
 
-// Computed property for Latest to Oldest Announcements
 const sortedAnnouncements = computed(() => {
     if (!props.course.announcements) return [];
-    return [...props.course.announcements].sort((a, b) => {
-        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-    });
+    return [...props.course.announcements].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 });
 
-// Computed properties for Notification Dots
 const pendingTasksCount = computed(() => {
     const now = new Date();
     if (!props.course.assignments) return 0;
     return props.course.assignments.filter(a => {
-        const isSubmitted = a.submissions.length > 0;
+        const isSubmitted = a.submissions && a.submissions.length > 0;
         const isPastDue = a.due_date && new Date(a.due_date) < now;
         return !isSubmitted && (!isPastDue || !a.due_date);
     }).length;
@@ -101,7 +135,7 @@ const pastDueTasksCount = computed(() => {
     const now = new Date();
     if (!props.course.assignments) return 0;
     return props.course.assignments.filter(a => {
-        const isSubmitted = a.submissions.length > 0;
+        const isSubmitted = a.submissions && a.submissions.length > 0;
         const isPastDue = a.due_date && new Date(a.due_date) < now;
         return !isSubmitted && isPastDue;
     }).length;
@@ -109,13 +143,12 @@ const pastDueTasksCount = computed(() => {
 
 const totalActionNeeded = computed(() => pendingTasksCount.value + pastDueTasksCount.value);
 
-// Computed property for Tasks sorted by Closest to Farthest Deadline
 const filteredAssignments = computed(() => {
     const now = new Date();
     if (!props.course.assignments) return [];
     
     let filtered = props.course.assignments.filter(a => {
-        const isSubmitted = a.submissions.length > 0;
+        const isSubmitted = a.submissions && a.submissions.length > 0;
         const dueDate = a.due_date ? new Date(a.due_date) : null;
         const isPastDue = dueDate && dueDate < now;
         if (assignmentFilter.value === 'completed') return isSubmitted;
@@ -156,10 +189,8 @@ onMounted(async () => {
     }
 });
 
-const linkify = (text) => text ? text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline font-bold">$1</a>') : 'No instructions.';
-
 const getStatus = (assignment) => {
-    const sub = assignment.submissions[0];
+    const sub = assignment.submissions && assignment.submissions[0];
     if (!sub) return assignment.due_date && new Date(assignment.due_date) < new Date() 
         ? { label: 'Missing', class: 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' } 
         : { label: 'To Do', class: 'text-slate-500 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700' };
@@ -167,25 +198,41 @@ const getStatus = (assignment) => {
     return { label: 'Submitted', class: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800' };
 };
 
-const getPaths = (paths) => {
-    if (!paths) return [];
-    if (Array.isArray(paths)) return paths;
-    try { return JSON.parse(paths) || []; } catch (e) { return []; }
+const isClosed = (assignment) => {
+    if (!assignment || !assignment.closing_date) return false;
+    return new Date().getTime() > new Date(assignment.closing_date).getTime();
 };
 
-// File submission tracking
+const formatDate = (dateString) => {
+    if (!dateString) return 'None';
+    const d = new Date(dateString);
+    return d.toLocaleString('en-US', {
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric', 
+        hour: 'numeric', 
+        minute: '2-digit', 
+        hour12: true 
+    });
+};
+
 const handleFileSelect = (e) => {
-    formSubmission.files = Array.from(e.target.files);
+    const newFiles = Array.from(e.target.files);
+    formSubmission.files = [...formSubmission.files, ...newFiles];
+    e.target.value = ''; 
 };
 
-const totalFileSize = computed(() => {
-    return formSubmission.files.reduce((acc, file) => acc + file.size, 0);
-});
+const removeFile = (index) => {
+    formSubmission.files.splice(index, 1);
+};
+
+const totalFileSize = computed(() => formSubmission.files.reduce((acc, file) => acc + file.size, 0));
 const isOverSizeLimit = computed(() => totalFileSize.value > 15 * 1024 * 1024);
 const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(2) + ' MB';
 
 const openMaterialPreview = (path) => {
-    selectedMaterialPath.value = path;
+    if (Array.isArray(path)) path = path[0];
+    selectedMaterialPath.value = typeof path === 'string' ? path : String(path || '');
     showMaterialPreview.value = true;
 };
 
@@ -196,7 +243,8 @@ const deleteComment = (id) => { if(confirm('Delete?')) router.delete(route('comm
 const openSubmitModal = (a) => { 
     selectedAssignment.value = a; 
     formSubmission.reset(); 
-    if (a.submissions[0]) {
+    formSubmission.files = [];
+    if (a.submissions && a.submissions.length > 0) {
         formSubmission.text_content = a.submissions[0].text_content;
     }
     showSubmitModal.value = true; 
@@ -204,7 +252,6 @@ const openSubmitModal = (a) => {
 
 const submitWork = () => {
     if (isOverSizeLimit.value) return;
-    
     formSubmission.post(route('assignments.submit', selectedAssignment.value.id), { 
         forceFormData: true,
         preserveScroll: true,
@@ -216,7 +263,12 @@ const submitWork = () => {
     });
 };
 
-const undoTurnIn = () => { if (confirm('Undo submission? This will remove your files and answers.')) router.post(route('assignments.unsubmit', selectedAssignment.value.id), {}, { onSuccess: () => showSubmitModal.value = false, preserveScroll: true }); };
+const undoTurnIn = () => { 
+    if (confirm('Undo submission? This will remove your files and answers.')) {
+        router.post(route('assignments.unsubmit', selectedAssignment.value.id), {}, { onSuccess: () => showSubmitModal.value = false, preserveScroll: true });
+    }
+};
+
 const leaveClass = () => { if (confirm('Leave this class? You will lose access.')) router.delete(route('student.courses.leave', props.course.id)); };
 </script>
 
@@ -395,7 +447,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                                 </div>
 
                                 <p class="hidden sm:block text-[10px] text-slate-500 dark:text-slate-400 truncate font-medium leading-snug mt-0.5">
-                                    {{ assignment.description || 'No instructions.' }}
+                                    {{ formatDescription(assignment.description) }}
                                 </p>
                             </div>
 
@@ -403,12 +455,12 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                                 <div class="flex items-center gap-1 text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                                     <Clock class="w-2.5 h-2.5 sm:hidden" />
                                     <span>
-                                        Due: {{ assignment.due_date ? new Date(assignment.due_date).toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : 'No Date' }}
+                                        Due: {{ assignment.due_date ? formatDate(assignment.due_date) : 'No Date' }}
                                     </span>
                                 </div>
                                 
                                 <button @click="openSubmitModal(assignment)" class="bg-blue-600 hover:bg-blue-500 text-white text-[8px] sm:text-[9px] font-black uppercase tracking-widest px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg shadow-sm transition-all active:scale-95">
-                                    {{ assignment.submissions[0] ? 'View / Undo' : 'Submit Work' }}
+                                    {{ assignment.submissions && assignment.submissions.length > 0 ? 'View / Undo' : 'Submit Work' }}
                                 </button>
                             </div>
                         </div>
@@ -433,7 +485,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                             </div>
                             <div class="flex flex-col">
                                 <span class="text-sm font-black text-slate-800 dark:text-slate-100 truncate group-hover:text-emerald-600 transition">{{ lesson.title }}</span>
-                                <span v-if="lesson.available_until" class="text-[9px] font-bold text-red-400 uppercase tracking-widest mt-0.5">Closes: {{ new Date(lesson.available_until).toLocaleDateString() }}</span>
+                                <span v-if="lesson.available_until" class="text-[9px] font-bold text-red-400 uppercase tracking-widest mt-0.5">Closes: {{ formatDate(lesson.available_until) }}</span>
                             </div>
                         </div>
                         
@@ -441,7 +493,7 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                             <button @click="openMaterialPreview(lesson.attachment_path)" title="View Material" class="p-2 text-slate-500 bg-slate-50 hover:text-blue-600 hover:bg-blue-50 dark:bg-slate-900/50 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-blue-900/30 rounded-lg transition shadow-sm border border-slate-200 dark:border-slate-700">
                                 <Eye class="w-4 h-4" />
                             </button>
-                            <a :href="getFileUrl(lesson.attachment_path)" download title="Download Material" class="p-2 text-emerald-600 bg-emerald-50 hover:text-white hover:bg-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-500 dark:hover:text-white dark:hover:bg-emerald-600 rounded-lg transition shadow-sm border border-emerald-200 dark:border-emerald-800">
+                            <a :href="getFileUrl(lesson.attachment_path)" target="_blank" :download="getFileName(lesson.attachment_path)" title="Download Material" class="p-2 text-emerald-600 bg-emerald-50 hover:text-white hover:bg-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-500 dark:hover:text-white dark:hover:bg-emerald-600 rounded-lg transition shadow-sm border border-emerald-200 dark:border-emerald-800">
                                 <Download class="w-4 h-4" />
                             </a>
                         </div>
@@ -468,15 +520,15 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
                 </div>
                 
                 <div class="flex-1 p-4 bg-slate-100 dark:bg-slate-950/50 flex flex-col items-center justify-center relative overflow-hidden">
-                    <iframe v-if="selectedMaterialPath?.toLowerCase().endsWith('.pdf')" :src="getFileUrl(selectedMaterialPath)" class="w-full h-full border-none rounded-lg shadow-sm bg-white dark:bg-slate-900"></iframe>
-                    <img v-else-if="selectedMaterialPath?.match(/\.(jpeg|jpg|png|gif)$/i)" :src="getFileUrl(selectedMaterialPath)" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
+                    <iframe v-if="isPdf(selectedMaterialPath)" :src="getFileUrl(selectedMaterialPath)" class="w-full h-full border-none rounded-lg shadow-sm bg-white dark:bg-slate-900"></iframe>
+                    <img v-else-if="isImage(selectedMaterialPath)" :src="getFileUrl(selectedMaterialPath)" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
                     
                     <div v-else class="text-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-sm w-full">
                         <FileText class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" />
                         <p class="text-slate-500 font-black mb-1 text-[11px] uppercase tracking-widest">Preview unavailable</p>
                         <p class="text-slate-400 text-[10px] font-bold mb-6">This file type cannot be viewed directly.</p>
                         <div class="flex flex-col gap-2">
-                            <a :href="getFileUrl(selectedMaterialPath)" download class="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition text-[10px] font-black uppercase tracking-widest px-4 py-3 rounded-lg shadow-sm w-full">
+                            <a :href="getFileUrl(selectedMaterialPath)" target="_blank" :download="getFileName(selectedMaterialPath)" class="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition text-[10px] font-black uppercase tracking-widest px-4 py-3 rounded-lg shadow-sm w-full">
                                 <Download class="w-4 h-4" /> Download File
                             </a>
                         </div>
@@ -488,137 +540,177 @@ const leaveClass = () => { if (confirm('Leave this class? You will lose access.'
         <!-- SUBMIT WORK MODAL -->
         <Modal :show="showSubmitModal" @close="showSubmitModal = false" maxWidth="2xl">
             <div class="bg-white dark:bg-slate-800 rounded-2xl overflow-hidden flex flex-col h-[85vh]">
-                <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
-                    <div class="flex gap-4"> 
-                        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
-                        </div> 
-                        <div>
-                            <h2 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">{{ selectedAssignment?.title }}</h2>
-                            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Submit Your Evidence</p> 
-                        </div>
+                
+                <div v-if="$page.props.flash?.error" class="bg-red-50 border-b border-red-200 text-red-600 p-4 text-xs font-bold shadow-sm">
+                    <div class="flex items-center gap-2 mb-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <span class="font-black uppercase tracking-widest">Upload Failed</span>
                     </div>
-                    <button @click="showSubmitModal = false" class="text-slate-400 hover:text-slate-600 text-2xl font-light">&times;</button>
+                    {{ $page.props.flash.error }}
                 </div>
-                <div class="p-6 overflow-y-auto flex-1 space-y-6">
-                    <div class="grid grid-cols-2 gap-4">
+
+                <div class="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+                    <div class="flex gap-4 min-w-0">
+                         <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                        </div>
+                         <div class="min-w-0">
+                            <h2 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">{{ selectedAssignment?.title }}</h2>
+                            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest truncate">Submit Your Evidence</p>
+                         </div>
+                    </div>
+                    <button @click="showSubmitModal = false" class="text-slate-400 hover:text-slate-600 text-2xl font-light shrink-0">&times;</button>
+                </div>
+
+                <div class="p-6 overflow-y-auto flex-1 space-y-6 custom-scrollbar">
+                    
+                    <!-- DATES AND POINTS GRID -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div class="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-700">
                             <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Total Points</p>
-                            <div class="flex items-center gap-2 text-blue-600 font-black">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg> 
+                            <div class="flex items-center gap-2 text-blue-600 font-black truncate">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg> 
                                 {{ selectedAssignment?.points }} Pts
                             </div>
                         </div>
                         <div class="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-700">
-                            <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Deadline</p>
-                            <div class="flex items-center gap-2 text-red-500 font-black">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 
-                                {{ selectedAssignment?.due_date ? new Date(selectedAssignment.due_date).toLocaleDateString() : 'No Deadline' }}
+                            <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Due Date</p>
+                            <div class="flex items-center gap-2 text-red-500 font-black truncate">
+                                <Clock class="w-4 h-4 shrink-0" />
+                                {{ formatDate(selectedAssignment?.due_date) }}
+                            </div>
+                        </div>
+                        <div v-if="selectedAssignment?.closing_date" class="col-span-1 sm:col-span-2 p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-700">
+                            <p class="text-[9px] font-black text-slate-400 uppercase mb-1">Closing Date (Locked)</p>
+                            <div class="flex items-center gap-2 text-red-500 font-black truncate">
+                                <AlertTriangle class="w-4 h-4 shrink-0" />
+                                {{ formatDate(selectedAssignment?.closing_date) }}
                             </div>
                         </div>
                     </div>
+
+                    <!-- INSTRUCTIONS (STRIPPED CLEAN) -->
                     <div class="space-y-2">
-                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Teacher's Instructions</h3>
-                        <div class="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800 leading-relaxed" v-html="linkify(selectedAssignment?.description)"></div>
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><FileText class="w-3.5 h-3.5"/> Instructions</h3>
+                        <div class="text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800 leading-relaxed" v-html="formatDescription(selectedAssignment?.description)"></div>
+                    </div>
+
+                    <!-- TEACHER ATTACHMENTS -->
+                    <div v-if="selectedAssignment?.attachment_paths && getPaths(selectedAssignment.attachment_paths).length > 0" class="space-y-2 mt-4">
+                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Paperclip class="w-3.5 h-3.5"/> Reference Materials</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div v-for="(path, index) in getPaths(selectedAssignment.attachment_paths)" :key="index" class="flex items-center justify-between p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                                <div class="flex items-center gap-2 overflow-hidden">
+                                    <FileText class="w-4 h-4 text-blue-500 shrink-0" />
+                                    <span class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate" :title="getFileName(path)">{{ getFileName(path) }}</span>
+                                </div>
+                                <div class="flex gap-2 shrink-0 ml-2">
+                                    <button @click.prevent="openMaterialPreview(path)" class="p-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-blue-600 rounded transition"><Eye class="w-3.5 h-3.5" /></button>
+                                    <a :href="getFileUrl(path)" target="_blank" :download="getFileName(path)" class="p-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 hover:bg-blue-100 rounded transition"><Download class="w-3.5 h-3.5" /></a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div v-if="selectedAssignment?.attachment_paths && getPaths(selectedAssignment.attachment_paths).length" class="space-y-2 mt-4">
-                        <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Attached Materials</h3>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div v-for="(path, index) in getPaths(selectedAssignment.attachment_paths)" :key="index" class="flex justify-between items-center p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                <div class="flex items-center gap-2 overflow-hidden">
-                                    <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                                    <span class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">Material {{ index + 1 }}</span>
-                                </div>
-                                <div class="flex gap-3 shrink-0 ml-2">
-                                    <button type="button" @click.prevent="openMaterialPreview(path)" class="text-blue-600 hover:text-blue-500 text-[10px] font-black uppercase tracking-widest transition">View</button>
-                                    <a :href="getFileUrl(path)" download class="text-emerald-600 hover:text-emerald-500 text-[10px] font-black uppercase tracking-widest transition">Save</a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     <hr class="border-slate-100 dark:border-slate-700" />
 
-                    <div v-if="selectedAssignment?.submissions[0]" class="space-y-4">
+                    <!-- IF SUBMITTED -->
+                    <div v-if="selectedAssignment?.submissions && selectedAssignment.submissions.length > 0" class="space-y-4">
                         <div class="p-5 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800 text-center">
-                            <span class="text-blue-600 dark:text-blue-400 text-xs font-black uppercase tracking-widest block mb-4">You turned this in on {{ new Date(selectedAssignment.submissions[0].submitted_at).toLocaleDateString() }}</span>
+                            <span class="text-blue-600 dark:text-blue-400 text-xs font-black uppercase tracking-widest block mb-4">You turned this in on {{ formatDate(selectedAssignment.submissions[0].submitted_at || selectedAssignment.submissions[0].created_at) }}</span>
                             
                             <div v-if="selectedAssignment.submissions[0].text_content" class="text-left bg-white dark:bg-slate-800 p-4 rounded-xl border border-blue-100 dark:border-blue-700 mb-4 shadow-sm">
                                 <p class="text-[9px] font-black text-slate-400 uppercase mb-2">Text Content:</p>
                                 <p class="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{{ selectedAssignment.submissions[0].text_content }}</p>
                             </div>
-                            <div v-if="getPaths(selectedAssignment.submissions[0].file_paths).length" class="text-left bg-white dark:bg-slate-800 p-4 rounded-xl border border-blue-100 dark:border-blue-700 shadow-sm">
+
+                            <div v-if="getPaths(selectedAssignment.submissions[0].file_paths).length > 0" class="text-left bg-white dark:bg-slate-800 p-4 rounded-xl border border-blue-100 dark:border-blue-700 shadow-sm">
                                 <p class="text-[9px] font-black text-slate-400 uppercase mb-2">Attached Files:</p>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                     <div v-for="(path, index) in getPaths(selectedAssignment.submissions[0].file_paths)" :key="index" class="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-700">
-                                        <span class="text-[10px] font-bold truncate w-32">Attachment {{ index + 1 }}</span>
-                                        <div class="flex gap-2">
-                                            <a :href="getFileUrl(path)" target="_blank" class="text-blue-600 text-[10px] font-black uppercase hover:underline">View</a>
-                                            <a :href="getFileUrl(path)" download class="text-emerald-600 text-[10px] font-black uppercase hover:underline">Save</a>
+                                        <span class="text-[10px] font-bold truncate w-32" :title="getFileName(path)">{{ getFileName(path) }}</span>
+                                        <div class="flex gap-2 shrink-0">
+                                            <button type="button" @click.prevent="openMaterialPreview(path)" class="text-blue-600 hover:text-blue-500 text-[9px] font-black uppercase tracking-widest transition">View</button>
+                                            <a :href="getFileUrl(path)" target="_blank" :download="getFileName(path)" class="text-emerald-600 hover:text-emerald-500 text-[9px] font-black uppercase tracking-widest transition">Save</a>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div v-if="selectedAssignment.submissions[0].grade" class="p-5 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
+                        <!-- Graded Status -->
+                        <div v-if="selectedAssignment.submissions[0].grade !== null" class="p-5 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
                             <div class="flex items-center gap-2 mb-2 text-emerald-700 font-black uppercase text-xs tracking-widest">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg> 
+                                <Trophy class="w-4 h-4" /> 
                                 Graded: {{ selectedAssignment.submissions[0].grade }}/{{ selectedAssignment.points }}
                             </div>
                             <div class="text-xs text-emerald-800 dark:text-emerald-300 italic leading-relaxed">"{{ selectedAssignment.submissions[0].feedback }}"</div>
                         </div>
-                        <div v-else class="flex justify-end">
-                            <button @click="undoTurnIn" class="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-slate-800 border border-red-200 text-red-600 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-50 transition shadow-sm">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg> Undo Turn In
+
+                        <!-- Undo Button (Only if NOT closed AND NOT graded) -->
+                        <div v-else class="flex justify-end mt-4">
+                            <button v-if="!isClosed(selectedAssignment)" @click="undoTurnIn" class="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-50 dark:hover:bg-red-900/20 transition shadow-sm">
+                                <Undo2 class="w-4 h-4" /> Undo Turn In
                             </button>
+                            <span v-else class="text-[10px] text-red-500 font-bold uppercase tracking-widest">
+                                Deadline passed. Submissions locked.
+                            </span>
                         </div>
                     </div>
 
+                    <!-- IF NOT SUBMITTED BUT LOCKED -->
+                    <div v-else-if="isClosed(selectedAssignment)" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-2 text-red-600 dark:text-red-400">
+                        <AlertTriangle class="w-5 h-5 shrink-0" />
+                        <span class="text-xs font-black uppercase tracking-widest">Locked. The deadline has passed.</span>
+                    </div>
+
+                    <!-- SUBMISSION FORM -->
                     <form v-else @submit.prevent="submitWork" class="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
                         <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest">Write Answer or Links (Optional)</label>
-                            <textarea v-model="formSubmission.text_content" class="w-full bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-xl p-4 text-sm h-32 focus:ring-2 focus:ring-blue-500 resize-none shadow-inner" placeholder="Enter your text response or URLs here..."></textarea>
+                            <textarea v-model="formSubmission.text_content" class="w-full bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 rounded-xl p-4 text-sm h-32 focus:ring-2 focus:ring-blue-500 resize-none shadow-inner text-slate-900 dark:text-white" placeholder="Enter your text response or URLs here..."></textarea>
                             <InputError :message="formSubmission.errors.text_content" class="mt-1" />
                         </div>
                         
                         <div class="space-y-2">
                             <label class="text-[10px] font-black uppercase text-slate-400 tracking-widest">Attach Files</label>
-                            <div class="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-center relative hover:border-blue-400 hover:bg-blue-50/50 transition-all group">
+                            <div class="bg-slate-50 dark:bg-slate-900/50 p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-center relative hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-all group">
                                 <input type="file" multiple @change="handleFileSelect" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                                 <div class="flex flex-col items-center gap-2 text-slate-400 group-hover:text-blue-500">
-                                    <svg class="w-8 h-8 opacity-40 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                                    <Paperclip class="w-8 h-8 opacity-40 group-hover:scale-110 transition-transform" />
                                     <p class="text-xs font-bold uppercase tracking-wider">Drag files or Click to Upload</p>
                                 </div>
+                            </div>
+                            
+                            <div class="flex justify-between items-center px-1 mt-1">
+                                <span class="text-[9px] font-bold text-slate-400">Multiple files allowed. Max 15MB total.</span>
+                                <span class="text-[9px] font-black tracking-widest" :class="isOverSizeLimit ? 'text-red-500' : 'text-slate-500'">{{ formatSize(totalFileSize) }} / 15 MB</span>
                             </div>
                             
                             <InputError :message="formSubmission.errors.files" class="mt-2 text-center" />
                         </div>
                         
-                        <div v-if="formSubmission.files.length" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div v-for="(f,i) in formSubmission.files" :key="i" class="p-3 bg-white dark:bg-slate-700 rounded-xl border border-slate-100 dark:border-slate-600 flex justify-between items-center shadow-sm">
-                                <span class="text-[10px] font-bold truncate w-3/4">{{ f.name }}</span>
-                                <span class="text-[9px] font-black text-slate-400">{{ (f.size/1024).toFixed(0) }} KB</span>
+                        <div v-if="formSubmission.files.length" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                            <div v-for="(f,i) in formSubmission.files" :key="i" class="p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 flex justify-between items-center shadow-sm">
+                                <div class="flex items-center gap-2 overflow-hidden pr-2">
+                                    <button type="button" @click="removeFile(i)" class="text-red-500 hover:text-red-700 transition shrink-0 font-bold">&times;</button>
+                                    <span class="text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate" :title="f.name">{{ f.name }}</span>
+                                </div>
+                                <span class="text-[9px] font-black text-slate-400 shrink-0">{{ (f.size/1024).toFixed(0) }} KB</span>
                             </div>
                         </div>
                         
-                        <div class="flex justify-between items-center px-1 mt-auto shrink-0">
-                            <span class="text-[9px] font-black uppercase tracking-widest" :class="isOverSizeLimit ? 'text-red-600' : 'text-slate-400'">
-                                Total Size: {{ formatSize(totalFileSize) }} / 15 MB
-                            </span>
-                        </div>
-                        
-                        <div class="pt-2 border-t border-slate-50 dark:border-slate-700">
-                            <button :disabled="formSubmission.processing || isOverSizeLimit || (formSubmission.files.length === 0 && !formSubmission.text_content.trim())"
+                        <div class="pt-2 border-t border-slate-100 dark:border-slate-700 mt-4">
+                            <button :disabled="formSubmission.processing || isOverSizeLimit || (formSubmission.files.length === 0 && !formSubmission.text_content.trim())" 
                                  class="w-full bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest py-3 rounded-lg shadow-sm hover:bg-blue-500 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                                {{ isOverSizeLimit ? 'Size Limit Exceeded' : 'Turn In Task' }}
+                                {{ isOverSizeLimit ? 'Size Limit Exceeded' : (formSubmission.processing ? 'Submitting...' : 'Turn In Work') }}
                             </button>
                         </div>
                     </form>
                 </div>
             </div>
         </Modal>
+
     </AuthenticatedLayout>
 </template>
 

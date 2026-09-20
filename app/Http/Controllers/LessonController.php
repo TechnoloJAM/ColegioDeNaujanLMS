@@ -27,7 +27,10 @@ class LessonController extends Controller
             'available_until' => 'required|date|after_or_equal:available_from',
         ]);
 
-        $path = $request->file('file')->store('lessons', 's3');
+        // FIX: Preserve exact file name by storing inside a unique folder
+        $originalName = $request->file('file')->getClientOriginalName();
+        $path = $request->file('file')->storeAs('lessons/' . uniqid(), $originalName, 's3');
+
         $requireApproval = Setting::where('key', 'require_material_approval')->value('value') ?? 'true';
         $initialStatus = ($requireApproval === 'true' && Auth::user()->role !== 'admin') ? 'pending' : 'approved';
 
@@ -53,6 +56,7 @@ class LessonController extends Controller
     public function approve(Lesson $lesson)
     {
         if (Auth::user()->role !== 'admin') abort(403);
+
         $lesson->update(['approval_status' => 'approved']);
         
         // SMART FEATURE: Auto-mark admin notification as read
@@ -87,6 +91,7 @@ class LessonController extends Controller
     {
         if (Auth::user()->role !== 'admin') abort(403);
         $request->validate(['lesson_ids' => 'required|array', 'lesson_ids.*' => 'exists:lessons,id']);
+        
         $lessons = Lesson::with('course.teacher')->whereIn('id', $request->lesson_ids)->get();
 
         foreach ($lessons as $lesson) {
@@ -103,6 +108,7 @@ class LessonController extends Controller
                 $lesson->course->teacher->notify(new MaterialApproved($lesson));
             }
         }
+
         return back()->with('success', count($request->lesson_ids) . ' materials have been approved.');
     }
 
@@ -110,6 +116,7 @@ class LessonController extends Controller
     {
         if (Auth::user()->role !== 'admin') abort(403);
         $request->validate(['reason' => 'required|string|max:500']);
+
         $lesson->update(['approval_status' => 'rejected', 'rejection_note' => $request->reason]);
         
         // SMART FEATURE: Auto-mark admin notification as read (since they rejected it, task is done)
@@ -126,6 +133,7 @@ class LessonController extends Controller
     {
         if (Auth::user()->role !== 'admin') abort(403);
         $request->validate(['available_from' => 'required|date', 'available_until' => 'required|date|after_or_equal:available_from']);
+
         $lesson->update(['available_from' => $request->available_from, 'available_until' => $request->available_until, 'approval_status' => 'approved']);
         return back()->with('success', 'Material unarchived.');
     }
@@ -137,6 +145,7 @@ class LessonController extends Controller
         
         $requireApproval = Setting::where('key', 'require_material_approval')->value('value') ?? 'true';
         $status = ($requireApproval === 'true') ? 'pending' : 'approved';
+
         $lesson->update(['available_from' => $request->available_from, 'available_until' => $request->available_until, 'approval_status' => $status]);
         
         // SMART FEATURE: Notify Admins if approval is required again
@@ -144,6 +153,7 @@ class LessonController extends Controller
             $admins = User::where('role', 'admin')->get();
             Notification::send($admins, new MaterialRequiresApproval($lesson));
         }
+
         $msg = $status === 'pending' ? 'Unarchive requested. Waiting for admin approval.' : 'Material unarchived successfully.';
         return back()->with('success', $msg);
     }
@@ -159,7 +169,11 @@ class LessonController extends Controller
         ]);
 
         if ($lesson->attachment_path) Storage::disk('s3')->delete($lesson->attachment_path);
-        $path = $request->file('file')->store('lessons', 's3');
+
+        // FIX: Preserve exact file name by storing inside a unique folder
+        $originalName = $request->file('file')->getClientOriginalName();
+        $path = $request->file('file')->storeAs('lessons/' . uniqid(), $originalName, 's3');
+
         $requireApproval = Setting::where('key', 'require_material_approval')->value('value') ?? 'true';
         $status = ($requireApproval === 'true' && Auth::user()->role !== 'admin') ? 'pending' : 'approved';
 
@@ -176,6 +190,7 @@ class LessonController extends Controller
             $admins = User::where('role', 'admin')->get();
             Notification::send($admins, new MaterialRequiresApproval($lesson));
         }
+
         $msg = $status === 'pending' ? 'New material uploaded and resubmitted for approval.' : 'New material automatically approved.';
         return back()->with('success', $msg);
     }
@@ -183,16 +198,13 @@ class LessonController extends Controller
     public function update(Request $request, Lesson $lesson)
     {
         if (Auth::user()->role !== 'admin') abort(403);
-
         $request->validate([
             'title' => 'required|string|max:255', 
             'semester' => 'required|string|in:1st,2nd', 
             'available_from' => 'required|date', 
             'available_until' => 'required|date|after_or_equal:available_from'
         ]);
-
         $lesson->update($request->only('title', 'semester', 'available_from', 'available_until'));
-
         return back()->with('success', 'Material details updated successfully.');
     }
 }

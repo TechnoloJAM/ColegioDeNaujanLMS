@@ -15,7 +15,7 @@ const props = defineProps({
     course: Object,
     toBeGraded: Array,
     graded: Array,
-    enrollmentCount: Number, // ADDED: Receives the class size from the controller
+    enrollmentCount: Number,
     backUrl: String
 });
 
@@ -24,7 +24,7 @@ const totalSubmissions = computed(() => props.toBeGraded.length + props.graded.l
 const rawDescription = props.assignment.description || '';
 const secretTag = '[RESTRICT_LATE_STUDENTS]';
 const hasHiddenTag = rawDescription.includes(secretTag);
-const cleanDescription = rawDescription.replace(secretTag, '').trim();
+const cleanDescription = rawDescription.replace(/\[RESTRICT_LATE_STUDENTS\]/gi, '').trim();
 
 const activeTab = ref('details'); 
 const isEditing = ref(false); 
@@ -45,7 +45,6 @@ const formatDateForInput = (dateString) => {
     return new Date(dateString).toISOString().slice(0, 16);
 };
 
-// Calculate current local datetime
 const minDateTime = computed(() => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -60,53 +59,70 @@ const minDueDateTime = computed(() => {
 const editForm = useForm({
     _method: 'patch',
     title: props.assignment.title,
-    description: cleanDescription, // Set to the clean text without the tag
+    description: cleanDescription,
     type: props.assignment.type || 'assignment',
     points: props.assignment.points,
     due_date: formatDateForInput(props.assignment.due_date),
     closing_date: formatDateForInput(props.assignment.closing_date),
     files: [], 
-    hide_from_late: hasHiddenTag // Check the box if the tag was found!
+    hide_from_late: hasHiddenTag
 });
 
 const gradeForm = useForm({ grade: '', feedback: '' });
 
 const linkify = (text) => {
     if (!text) return 'No instructions provided.';
-    let clean = text.replace(/\[RESTRICT_LATE_STUDENTS\]/g, '').trim();
+    let clean = text.replace(/\[RESTRICT_LATE_STUDENTS\]/gi, '').trim();
     if (!clean) return 'No instructions provided.';
     return clean.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline font-bold">$1</a>');
 };
 
-const getAssignmentPaths = (assignment) => {
-    if (!assignment || !assignment.attachment_paths) return [];
-    if (Array.isArray(assignment.attachment_paths)) return assignment.attachment_paths;
-    try { 
-        return JSON.parse(assignment.attachment_paths) || []; 
-    } catch (e) { 
-        return []; 
+const getPaths = (paths) => {
+    if (!paths) return [];
+    let parsed = paths;
+    if (typeof paths === 'string') {
+        try { parsed = JSON.parse(paths); } catch (e) { return [paths]; }
     }
+    if (typeof parsed === 'string') {
+        try { parsed = JSON.parse(parsed); } catch (e) { return [parsed]; }
+    }
+    if (Array.isArray(parsed)) {
+        return parsed.flat(Infinity).filter(p => typeof p === 'string' && p.trim() !== '');
+    }
+    return typeof parsed === 'string' ? [parsed] : [];
 };
 
-const getPaths = (submission) => {
+const getAssignmentPaths = (assignment) => {
+    if (!assignment || !assignment.attachment_paths) return [];
+    return getPaths(assignment.attachment_paths);
+};
+
+const getSubmissionPaths = (submission) => {
     if (!submission || !submission.file_paths) return [];
-    if (Array.isArray(submission.file_paths)) return submission.file_paths;
-    try { return JSON.parse(submission.file_paths) || []; } catch (e) { return []; }
+    return getPaths(submission.file_paths);
 };
 
 const getFileUrl = (path) => {
-    if (!path) return '';
+    if (!path || typeof path !== 'string') return '';
     const cleanPath = path.replace(/^\/storage\//, '');
     return `${usePage().props.env.AWS_URL}/${cleanPath}`;
 };
 
+const getFileName = (path) => {
+    if (!path || typeof path !== 'string') return 'Attached File';
+    const clean = path.split('?')[0];
+    return clean.split('/').pop() || 'Attached File';
+};
+
+const isPdf = (path) => typeof path === 'string' && path.toLowerCase().endsWith('.pdf');
+const isImage = (path) => typeof path === 'string' && Boolean(path.match(/\.(jpeg|jpg|png|gif|webp)$/i));
+
 const currentFilePath = computed(() => {
-    const paths = getPaths(selectedSubmission.value);
+    const paths = getSubmissionPaths(selectedSubmission.value);
     return paths.length > 0 ? paths[currentFileIndex.value] : null;
 });
 
 const updateAssignment = () => {
-    // 🪄 INERTIA TRANSFORM: Re-apply the tag if they still have the box checked
     editForm.transform((data) => ({
         ...data,
         description: data.hide_from_late 
@@ -131,7 +147,7 @@ const deleteAssignment = () => {
 const openGradeModal = (submission) => {
     selectedSubmission.value = submission;
     currentFileIndex.value = 0;
-    gradeForm.grade = submission.grade || '';
+    gradeForm.grade = submission.grade !== null ? submission.grade : '';
     gradeForm.feedback = submission.feedback || '';
     gradeForm.clearErrors(); 
     showGradeModal.value = true;
@@ -146,7 +162,6 @@ const submitGrade = () => {
 
 <template>
     <Head :title="`Manage: ${assignment.title}`" />
-
     <AuthenticatedLayout>
         <div class="mb-4 flex flex-col md:flex-row md:justify-between md:items-end border-b border-slate-100 dark:border-slate-800 pb-3">
             <div class="min-w-0">
@@ -159,12 +174,9 @@ const submitGrade = () => {
                     <span class="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-slate-500 bg-slate-50 dark:bg-slate-900 shrink-0">
                         {{ assignment.type.replace('_', ' ') }}
                     </span>
-                    
-                    <!-- ADDED: TURN-IN RATE BADGE -->
                     <span class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-1.5 py-0.5 rounded shadow-sm border border-indigo-200 dark:border-indigo-800 shrink-0">
                         {{ totalSubmissions }} / {{ enrollmentCount || 0 }} Submitted
                     </span>
-
                     <h1 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight leading-tight truncate w-full sm:w-auto">{{ assignment.title }}</h1>
                 </div>
             </div>
@@ -191,11 +203,8 @@ const submitGrade = () => {
         </div>
 
         <div class="min-h-[400px]">
-            
             <div v-if="activeTab === 'details'" class="max-w-5xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-                
                 <div v-if="!isEditing" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    
                     <div class="md:col-span-2 space-y-4">
                         <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 sm:p-5 shadow-sm">
                             <div class="flex items-center gap-2 mb-3 text-slate-400">
@@ -205,6 +214,7 @@ const submitGrade = () => {
                             <div class="prose dark:prose-invert max-w-none text-xs sm:text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed" v-html="linkify(assignment.description)"></div>
                         </div>
 
+                        <!-- TEACHER ATTACHED RESOURCES WITH REAL FILE NAMES -->
                         <div v-if="getAssignmentPaths(assignment).length > 0" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 sm:p-5 shadow-sm">
                             <div class="flex items-center gap-2 mb-3 text-slate-400">
                                 <Paperclip class="w-3.5 h-3.5" />
@@ -212,8 +222,8 @@ const submitGrade = () => {
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <div v-for="(path, index) in getAssignmentPaths(assignment)" :key="index">
-                                    <a :href="getFileUrl(path)" target="_blank" class="flex items-center justify-between p-2.5 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition group">
-                                        <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 group-hover:text-blue-600 truncate mr-2">Resource File {{ index + 1 }}</span>
+                                    <a :href="getFileUrl(path)" target="_blank" :download="getFileName(path)" class="flex items-center justify-between p-2.5 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition group">
+                                        <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 group-hover:text-blue-600 truncate mr-2" :title="getFileName(path)">{{ getFileName(path) }}</span>
                                         <ExternalLink class="w-3 h-3 text-slate-300 group-hover:text-blue-500 shrink-0" />
                                     </a>
                                 </div>
@@ -223,7 +233,6 @@ const submitGrade = () => {
 
                     <div class="space-y-3">
                         <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 shadow-sm space-y-4">
-                            
                             <div class="flex items-center gap-3">
                                 <div class="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 shrink-0">
                                     <Trophy class="w-4 h-4" />
@@ -233,7 +242,6 @@ const submitGrade = () => {
                                     <p class="text-sm font-black text-slate-900 dark:text-white">{{ assignment.points }} Points</p>
                                 </div>
                             </div>
-
                             <div class="flex items-center gap-3 border-t border-slate-100 dark:border-slate-700 pt-3">
                                 <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 shrink-0">
                                     <Clock class="w-4 h-4" />
@@ -248,10 +256,9 @@ const submitGrade = () => {
                                     </p>
                                 </div>
                             </div>
-
                             <div v-if="assignment.closing_date" class="flex items-center gap-3 border-t border-slate-100 dark:border-slate-700 pt-3">
                                 <div class="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 shrink-0">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    <Clock class="w-4 h-4" />
                                 </div>
                                 <div>
                                     <p class="text-[9px] font-black text-red-500 uppercase tracking-widest">Hard Deadline (Closes)</p>
@@ -263,7 +270,6 @@ const submitGrade = () => {
                                     </p>
                                 </div>
                             </div>
-
                         </div>
 
                         <div class="flex flex-col sm:flex-row md:flex-col gap-2">
@@ -277,12 +283,12 @@ const submitGrade = () => {
                     </div>
                 </div>
 
+                <!-- EDIT FORM -->
                 <form v-else @submit.prevent="updateAssignment" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 sm:p-6 max-w-2xl mx-auto space-y-4">
                     <div class="flex items-center gap-2 mb-2">
                         <Edit3 class="w-4 h-4 text-blue-500" />
                         <h2 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Edit Assignment</h2>
                     </div>
-
                     <div class="grid grid-cols-1 gap-3">
                         <div>
                             <label class="block text-[9px] font-black uppercase text-slate-500 mb-1 tracking-widest">Title</label>
@@ -341,17 +347,16 @@ const submitGrade = () => {
                             <InputError class="mt-1 text-[9px]" :message="editForm.errors.files" />
                         </div>
                     </div>
-
                     <div class="pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2 mt-2">
                         <button type="button" @click="isEditing = false" class="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition">Cancel</button>
                         <button type="submit" :disabled="editForm.processing" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-sm transition">Save Changes</button>
                     </div>
                 </form>
             </div>
-            
+
+            <!-- SUBMISSIONS LIST -->
             <div v-else class="animate-in fade-in duration-300">
                 <div v-if="(activeTab === 'grading' ? toBeGraded : graded).length > 0" class="flex flex-col gap-2">
-                    
                     <div v-for="sub in (activeTab === 'grading' ? toBeGraded : graded)" :key="sub.id" 
                          @click="openGradeModal(sub)"
                          class="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm gap-3 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 transition">
@@ -361,8 +366,8 @@ const submitGrade = () => {
                             <div class="truncate">
                                 <div class="flex items-center gap-2">
                                     <div class="font-black text-xs sm:text-sm text-slate-900 dark:text-white truncate">{{ sub.student.name }}</div>
-                                    <span v-if="assignment.due_date && new Date(sub.created_at) > new Date(assignment.due_date)" 
-                                          class="px-1.5 py-0.5 bg-red-100 text-red-600 border border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800 rounded text-[8px] font-black uppercase tracking-widest shrink-0 shadow-sm">
+                                    <span v-if="assignment.due_date && new Date(sub.created_at) > new Date(assignment.due_date)"
+                                           class="px-1.5 py-0.5 bg-red-100 text-red-600 border border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800 rounded text-[8px] font-black uppercase tracking-widest shrink-0 shadow-sm">
                                         Late
                                     </span>
                                 </div>
@@ -388,7 +393,8 @@ const submitGrade = () => {
                 </div>
             </div>
         </div>
-        
+
+        <!-- GRADING & EVIDENCE MODAL -->
         <Modal :show="showGradeModal" @close="showGradeModal = false">
             <div class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-xl overflow-hidden shadow-2xl flex flex-col h-[90vh] md:h-[80vh]">
                 
@@ -398,8 +404,8 @@ const submitGrade = () => {
                         <div class="truncate">
                             <div class="flex items-center gap-2">
                                 <h3 class="font-black text-xs truncate">{{ selectedSubmission?.student.name }}</h3>
-                                <span v-if="assignment.due_date && selectedSubmission && new Date(selectedSubmission.created_at) > new Date(assignment.due_date)" 
-                                      class="px-1.5 py-0.5 bg-red-100 text-red-600 border border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800 rounded text-[8px] font-black uppercase tracking-widest shrink-0 shadow-sm">
+                                <span v-if="assignment.due_date && selectedSubmission && new Date(selectedSubmission.created_at) > new Date(assignment.due_date)"
+                                       class="px-1.5 py-0.5 bg-red-100 text-red-600 border border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800 rounded text-[8px] font-black uppercase tracking-widest shrink-0 shadow-sm">
                                     Late
                                 </span>
                             </div>
@@ -418,44 +424,39 @@ const submitGrade = () => {
                         </div>
 
                         <div v-if="currentFilePath" class="flex-1 flex flex-col items-center justify-center border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/50 overflow-hidden relative shadow-inner min-h-[250px]">
-                            
                             <div class="absolute top-2 right-2 flex gap-1.5 z-10">
                                 <a :href="getFileUrl(currentFilePath)" target="_blank" title="View in new tab" class="flex items-center gap-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded shadow-sm border border-slate-200 dark:border-slate-700 transition">
                                     <Eye class="w-3.5 h-3.5" /> <span class="hidden sm:inline">View</span>
                                 </a>
-                                <a :href="getFileUrl(currentFilePath)" download title="Download file" class="flex items-center gap-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded shadow-sm border border-slate-200 dark:border-slate-700 transition">
+                                <a :href="getFileUrl(currentFilePath)" target="_blank" :download="getFileName(currentFilePath)" title="Download file" class="flex items-center gap-1.5 bg-white/90 dark:bg-slate-800/90 backdrop-blur text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 text-[9px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded shadow-sm border border-slate-200 dark:border-slate-700 transition">
                                     <Download class="w-3.5 h-3.5" /> <span class="hidden sm:inline">Download</span>
                                 </a>
                             </div>
 
-                            <iframe v-if="currentFilePath.toLowerCase().endsWith('.pdf')" :src="getFileUrl(currentFilePath)" class="w-full h-full border-none"></iframe>
-                            <img v-else-if="currentFilePath.match(/\.(jpeg|jpg|png|gif)$/i)" :src="getFileUrl(currentFilePath)" class="max-w-full max-h-full object-contain p-4" />
+                            <iframe v-if="isPdf(currentFilePath)" :src="getFileUrl(currentFilePath)" class="w-full h-full border-none"></iframe>
+                            <img v-else-if="isImage(currentFilePath)" :src="getFileUrl(currentFilePath)" class="max-w-full max-h-full object-contain p-4" />
                             
                             <div v-else class="text-center p-8">
                                 <FileText class="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3 mx-auto" />
                                 <p class="text-slate-500 font-black mb-1 text-[10px] uppercase tracking-widest">Preview unavailable</p>
                                 <p class="text-slate-400 text-[9px] font-bold mb-4">This file type cannot be viewed directly.</p>
                                 <div class="flex items-center justify-center gap-2">
-                                    <a :href="getFileUrl(currentFilePath)" target="_blank" class="flex items-center gap-1.5 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-blue-600 transition text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded shadow-sm border border-slate-200 dark:border-slate-700">
-                                        <Eye class="w-3.5 h-3.5" /> View
-                                    </a>
-                                    <a :href="getFileUrl(currentFilePath)" download class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded shadow-sm">
+                                    <a :href="getFileUrl(currentFilePath)" target="_blank" :download="getFileName(currentFilePath)" class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded shadow-sm">
                                         <Download class="w-3.5 h-3.5" /> Download
                                     </a>
                                 </div>
                             </div>
                         </div>
-
                         <div v-else-if="!selectedSubmission?.text_content" class="flex flex-col items-center justify-center h-full text-slate-400 font-bold text-[10px] uppercase tracking-widest">No attachments.</div>
                     </div>
                     
                     <div class="w-full md:w-72 lg:w-80 bg-white dark:bg-slate-800 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-700 flex flex-col shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-none z-10">
-                        
+                        <!-- STUDENT SUBMITTED FILES LIST WITH REAL NAMES -->
                         <div class="p-4 border-b border-slate-100 dark:border-slate-700 shrink-0">
                             <h4 class="text-[9px] font-black uppercase text-slate-400 mb-2 tracking-widest">Files List</h4>
-                            <div v-if="getPaths(selectedSubmission).length" class="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-                                <button v-for="(path, index) in getPaths(selectedSubmission)" :key="index" @click="currentFileIndex = index" class="shrink-0 px-3 py-1.5 rounded border text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition" :class="currentFileIndex === index ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'">
-                                    File {{ index + 1 }}
+                            <div v-if="getSubmissionPaths(selectedSubmission).length" class="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+                                <button v-for="(path, index) in getSubmissionPaths(selectedSubmission)" :key="index" @click="currentFileIndex = index" class="shrink-0 px-3 py-1.5 rounded border text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition" :class="currentFileIndex === index ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'">
+                                    <span class="max-w-[120px] truncate" :title="getFileName(path)">{{ getFileName(path) }}</span>
                                 </button>
                             </div>
                             <div v-else class="text-[9px] font-black text-slate-400 uppercase tracking-widest">No files</div>
@@ -480,7 +481,6 @@ const submitGrade = () => {
                             </form>
                         </div>
                     </div>
-
                 </div>
             </div>
         </Modal>
@@ -488,12 +488,6 @@ const submitGrade = () => {
 </template>
 
 <style scoped>
-/* Mobile Tab Scroll Hider */
-.scrollbar-hide::-webkit-scrollbar {
-    display: none;
-}
-.scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 </style>

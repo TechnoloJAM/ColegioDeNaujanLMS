@@ -19,14 +19,12 @@ const form = useForm({
     due_date: '',
     closing_date: '',
     files: [],
-    hide_from_late: false // DEFAULT: Unchecked (Mandatory for everyone)
+    hide_from_late: false
 });
 
-// Refs for UI state
 const showSuccess = ref(false);
 const fileInput = ref(null);
 
-// Calculate current local datetime for the calendar restrictions
 const minDateTime = computed(() => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -41,12 +39,10 @@ const goBack = () => {
     }
 };
 
-// --- NEW FILE HANDLING LOGIC ---
 const handleFileSelect = (e) => {
     const selectedFiles = Array.from(e.target.files);
-    // Append files instead of overwriting (like MS Teams)
     form.files = [...form.files, ...selectedFiles];
-    if (fileInput.value) fileInput.value.value = ''; // Reset input to allow selecting same file again
+    if (fileInput.value) fileInput.value.value = '';
 };
 
 const removeFile = (index) => {
@@ -57,10 +53,8 @@ const previewFile = (file) => {
     const fileUrl = URL.createObjectURL(file);
     window.open(fileUrl, '_blank');
 };
-// -------------------------------
 
 const submit = () => {
-    // 🪄 INERTIA TRANSFORM: Intercepts the data right before sending
     form.transform((data) => ({
         ...data,
         description: data.hide_from_late 
@@ -68,6 +62,7 @@ const submit = () => {
             : data.description,
     })).post(route('teacher.assignments.store', props.course.id), {
         preserveScroll: true,
+        forceFormData: true, // Guarantees files are uploaded as multipart/form-data
         onSuccess: () => {
             form.reset();
             if (fileInput.value) fileInput.value.value = '';
@@ -81,9 +76,7 @@ const submit = () => {
 
 <template>
     <Head title="Create Assignment" />
-
     <AuthenticatedLayout>
-        
         <div class="mb-4 flex flex-col md:flex-row md:justify-between md:items-end border-b border-slate-100 dark:border-slate-800 pb-3">
             <div class="min-w-0">
                 <nav class="flex items-center gap-1.5 mb-1.5">
@@ -104,7 +97,6 @@ const submit = () => {
 
         <div class="max-w-2xl mx-auto pb-8">
             <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 sm:p-6">
-                
                 <transition 
                     enter-active-class="transition ease-out duration-300" 
                     enter-from-class="opacity-0 -translate-y-2" 
@@ -117,9 +109,8 @@ const submit = () => {
                         <span class="text-[10px] font-black uppercase tracking-widest">Assignment created successfully!</span>
                     </div>
                 </transition>
-                
+
                 <form @submit.prevent="submit" class="space-y-4">
-                    
                     <div>
                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Title <span class="text-red-500">*</span></label>
                         <input v-model="form.title" type="text" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent transition shadow-sm" required autofocus />
@@ -161,16 +152,14 @@ const submit = () => {
                     </div>
 
                     <div>
-                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Instructions (Optional)</label>
+                        <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Instructions (Optional)</label>
                         <textarea v-model="form.description" class="w-full rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white p-2 text-xs h-24 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition shadow-sm" placeholder="Write instructions or guidelines for the students here..."></textarea>
                     </div>
 
                     <div>
                         <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Attachments (Optional)</label>
-                        <!-- Updated File Input to trigger handleFileSelect -->
                         <input type="file" ref="fileInput" multiple @change="handleFileSelect" class="block w-full text-[10px] text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[9px] file:font-black file:uppercase file:tracking-widest file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 cursor-pointer bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 transition shadow-sm" />
                         
-                        <!-- Updated File Iteration with View/Remove buttons -->
                         <div v-if="form.files && form.files.length > 0" class="mt-2 space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar pr-1">
                             <div v-for="(file, index) in form.files" :key="index" class="text-[9px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800 shadow-sm">
                                 <div class="flex items-center gap-1.5 truncate pr-2">
@@ -199,9 +188,7 @@ const submit = () => {
                             <span v-else>Create Task</span>
                         </button>
                     </div>
-
                 </form>
-
             </div>
         </div>
     </AuthenticatedLayout>

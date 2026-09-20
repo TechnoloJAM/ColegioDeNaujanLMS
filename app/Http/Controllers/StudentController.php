@@ -41,8 +41,9 @@ class StudentController extends Controller
             
         $enrolledCourseIds = $enrollments->keys();
             
-        // Fetch pending assignments and filter out the hidden ones
-        $pendingAssignments = Assignment::whereIn('course_id', $enrolledCourseIds)
+        // Fetch pending assignments, eager load course title, and filter out the hidden ones
+        $pendingAssignments = Assignment::with('course:id,title')
+            ->whereIn('course_id', $enrolledCourseIds)
             ->where(function ($q) {
                 $q->where('closing_date', '>=', now())
                   ->orWhereNull('closing_date');
@@ -58,6 +59,65 @@ class StudentController extends Controller
         $pendingCount = $pendingAssignments->count();
 
         $hardCodedRecommendations = [];
+
+        // ==========================================
+        // SMART DEADLINE & RESCUE ALERTS
+        // ==========================================
+        $now = now();
+
+        foreach ($pendingAssignments as $assignment) {
+            // Ensure dates are parsed properly for safe calculation
+            $dueDate = $assignment->due_date ? Carbon::parse($assignment->due_date) : null;
+            $closingDate = $assignment->closing_date ? Carbon::parse($assignment->closing_date) : null;
+            $courseTitle = $assignment->course->title ?? 'your class';
+
+            if ($dueDate) {
+                $isPastDue = $dueDate->isPast();
+                
+                if (!$isPastDue) {
+                    // TRIGGER 1: Due in less than 24 hours
+                    if ($now->diffInHours($dueDate) <= 24) {
+                        $hardCodedRecommendations[] = [
+                            'id' => 'urgent_due_' . $assignment->id,
+                            'category' => 'Urgent Deadline',
+                            'recommendation_text' => "Final Call: '{$assignment->title}' in {$courseTitle} is due in less than 24 hours.",
+                            'reasoning' => "Due on " . $dueDate->format('M d, Y g:i A') . ". Submit it soon to avoid late penalties."
+                        ];
+                    }
+                } else {
+                    // TRIGGER 2: Missed Soft Deadline (Rescue Plan)
+                    if ($closingDate) {
+                        if ($closingDate->isFuture() && $now->diffInHours($closingDate) <= 24) {
+                            // Closes permanently in less than 24 hours!
+                            $hardCodedRecommendations[] = [
+                                'id' => 'urgent_close_' . $assignment->id,
+                                'category' => 'Last Chance',
+                                'recommendation_text' => "'{$assignment->title}' locks permanently in less than 24 hours!",
+                                'reasoning' => "Closes on " . $closingDate->format('M d, Y g:i A') . ". This is your absolute last chance to submit."
+                            ];
+                        } 
+                        elseif ($closingDate->isFuture()) {
+                            // Standard Rescue Opportunity
+                            $hardCodedRecommendations[] = [
+                                'id' => 'missed_' . $assignment->id,
+                                'category' => 'Rescue Opportunity',
+                                'recommendation_text' => "You missed the deadline for '{$assignment->title}'.",
+                                'reasoning' => "It isn't locked yet! Submit it before it closes on " . $closingDate->format('M d, Y') . " to salvage your grade."
+                            ];
+                        }
+                    } else {
+                        // No closing date, just missed due date
+                        $hardCodedRecommendations[] = [
+                            'id' => 'missed_' . $assignment->id,
+                            'category' => 'Rescue Opportunity',
+                            'recommendation_text' => "You missed the deadline for '{$assignment->title}'.",
+                            'reasoning' => "The submission box is still open! Submit it ASAP to salvage your grade."
+                        ];
+                    }
+                }
+            }
+        }
+        // ==========================================
         
         foreach ($enrolledCourseIds as $courseId) {
             $course = Course::find($courseId);
@@ -272,7 +332,9 @@ class StudentController extends Controller
         $filePaths = [];
         if ($hasFiles) {
             foreach ($request->file('files') as $file) {
-                $filePaths[] = $file->store('submissions', 's3');
+                // FIX: Preserve exact file name by storing inside a unique folder
+                $originalName = $file->getClientOriginalName();
+                $filePaths[] = $file->storeAs('submissions/' . uniqid(), $originalName, 's3');
             }
         } else if ($existingSubmission) {
             $filePaths = json_decode($existingSubmission->file_paths, true) ?? [];

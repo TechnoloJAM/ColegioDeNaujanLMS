@@ -48,9 +48,9 @@ class AssignmentController extends Controller
 
         $source = $request->query('source', 'course');
         $backUrl = $source === 'global' 
-                 ? route('teacher.assignments.index') 
-                 : route('teacher.courses.show', $course->id);
-                 
+                  ? route('teacher.assignments.index') 
+                  : route('teacher.courses.show', $course->id);
+                  
         return Inertia::render('Teacher/AssignmentCreate', [
             'course' => $course,
             'source' => $source,
@@ -75,7 +75,9 @@ class AssignmentController extends Controller
         $filePaths = [];
         if ($request->hasFile('files')) {
             foreach ($request->file('files') as $file) {
-                $filePaths[] = $file->store('assignments', 's3');
+                // FIX: Preserve exact file name by storing inside a unique folder
+                $originalName = $file->getClientOriginalName();
+                $filePaths[] = $file->storeAs('assignments/' . uniqid(), $originalName, 's3');
             }
         }
 
@@ -110,9 +112,9 @@ class AssignmentController extends Controller
         
         $source = $request->query('source');
         $backUrl = $source === 'course' 
-             ? route('teacher.courses.show', $assignment->course_id) 
-             : route('teacher.assignments.index');
-             
+              ? route('teacher.courses.show', $assignment->course_id) 
+              : route('teacher.assignments.index');
+              
         $submissions = $assignment->submissions()->with('student')->get();
         
         $enrollmentCount = $assignment->course->enrollments()->where('status', 'approved')->count();
@@ -158,7 +160,9 @@ class AssignmentController extends Controller
 
             $filePaths = [];
             foreach ($request->file('files') as $file) {
-                $filePaths[] = $file->store('assignments', 's3');
+                // FIX: Preserve exact file name by storing inside a unique folder
+                $originalName = $file->getClientOriginalName();
+                $filePaths[] = $file->storeAs('assignments/' . uniqid(), $originalName, 's3');
             }
             $data['attachment_paths'] = json_encode($filePaths);
         }
@@ -171,6 +175,7 @@ class AssignmentController extends Controller
     public function destroy(Assignment $assignment)
     {
         if ($assignment->course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') abort(403);
+
         $assignment->delete();
 
         return redirect()->route('teacher.courses.show', $assignment->course_id)->with('success', 'Task deleted successfully.');
@@ -186,7 +191,6 @@ class AssignmentController extends Controller
         ]);
 
         $submission->update(['grade' => $request->grade, 'feedback' => $request->feedback]);
-
         if ($submission->user) $submission->user->notify(new AssignmentGraded($submission));
 
         return back()->with('success', 'Grade submitted successfully.');
