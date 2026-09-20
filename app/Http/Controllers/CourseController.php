@@ -134,7 +134,6 @@ class CourseController extends Controller
             $path = $request->file('thumbnail')->store('thumbnails', 's3');
             $data['thumbnail'] = $path;
         }
-
         $course->update($data); 
         return back()->with('success', 'Course updated successfully.');
     }

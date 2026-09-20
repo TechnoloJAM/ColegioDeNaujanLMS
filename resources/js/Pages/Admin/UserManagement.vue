@@ -132,6 +132,16 @@ const toggleSelection = (id) => {
     else selectedIds.value.push(id);
 };
 
+const generateAdminEmail = () => {
+    const randomNums = Math.floor(100 + Math.random() * 900);
+    if (form.name) {
+        const formattedName = form.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        form.email = `${formattedName}${randomNums}@lms.com`;
+    } else {
+        form.email = `user${randomNums}@lms.com`;
+    }
+};
+
 const isAllSelected = computed(() => {
     if (paginatedUsers.value.length === 0) return false;
     return selectedIds.value.length === paginatedUsers.value.length;
@@ -156,9 +166,24 @@ const generateResetPassword = () => { resetPasswordForm.password = generateStrin
 
 const generateSchoolId = () => {
     const year = new Date().getFullYear();
-    const randomNums = Math.floor(10000 + Math.random() * 90000); 
-    form.school_id = `${year}-${randomNums}`;
+    const randomNums = Math.floor(10000 + Math.random() * 90000);
+    if (form.role === 'teacher' || form.role === 'dean') {
+        form.school_id = `EMP-${year}-${randomNums}`;
+    } else if (form.role === 'admin') {
+        form.school_id = `ADM-${year}-${randomNums}`;
+    } else {
+        form.school_id = `${year}-${randomNums}`;
+    }
 };
+
+watch(() => form.role, (newRole) => {
+    if (newRole === 'student' || newRole === 'admin') {
+        form.department_id = '';
+    }
+    if (newRole !== 'student') {
+        form.program = '';
+    }
+});
 
 const submitUser = () => {
     form.post(route('admin.users.store'), { preserveScroll: true, onSuccess: () => { isCreateModalOpen.value = false; form.reset(); alert('Account created and verified!'); } });
@@ -478,6 +503,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                         </td>
                                         <td class="px-2 py-1.5 hidden sm:table-cell align-top">
                                             <span v-if="user.status === 'active'" class="text-[9px] font-black uppercase tracking-widest text-emerald-600 flex items-center gap-1"><div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> Active</span>
+                                            <span v-else-if="user.status === 'pending'" class="text-[9px] font-black uppercase tracking-widest text-orange-500 flex items-center gap-1"><div class="w-1.5 h-1.5 rounded-full bg-orange-500"></div> Pending</span>
                                             <span v-else class="text-[9px] font-black uppercase tracking-widest text-red-600 flex items-center gap-1" :title="user.suspension_reason"><div class="w-1.5 h-1.5 rounded-full bg-red-500"></div> Suspended</span>
                                         </td>
                                         <td class="px-1 py-1 sm:px-2 sm:py-1.5 text-right align-middle" @click.stop>
@@ -533,8 +559,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 <div class="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 shrink-0 overflow-hidden text-slate-500 dark:text-slate-400 flex items-center justify-center text-sm font-black shadow-sm relative">
                                     <img v-if="user.avatar" :src="user.avatar" class="w-full h-full object-cover" />
                                     <span v-else>{{ user.name.charAt(0) }}</span>
-                                    <!-- Mobile Status Dot -->
+                                   <!-- Mobile Status Dot -->
                                     <span v-if="user.status === 'suspended'" class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-red-500 border border-white dark:border-slate-800"></span>
+                                    <span v-else-if="user.status === 'pending'" class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-orange-500 border border-white dark:border-slate-800"></span>
                                     <span v-else class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white dark:border-slate-800"></span>
                                 </div>
                                 
@@ -695,6 +722,8 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 'px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border border-transparent shadow-sm',
                                 selectedUserDetails?.status === 'suspended'
                                     ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800'
+                                    : selectedUserDetails?.status === 'pending'
+                                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border-orange-200 dark:border-orange-800'
                                     : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
                             ]">
                                 {{ selectedUserDetails?.status }}
@@ -742,28 +771,38 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                 
                 <form @submit.prevent="submitUser" class="flex flex-col min-h-0">
                     <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 sm:pr-2 pb-2 space-y-3">
+                        <!-- Full Name -->
                         <div>
                             <InputLabel value="Full Name *" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                            <input v-model="form.name" type="text" :class="inputClass" required />
+                            <input v-model="form.name" type="text" :class="inputClass" placeholder="e.g. Juan Dela Cruz" required />
                             <InputError :message="form.errors.name" class="mt-1 text-[9px]" />
                         </div>
+
+                        <!-- Email Address -->
                         <div>
-                            <InputLabel value="Email Address *" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                            <input v-model="form.email" type="email" :class="inputClass" required />
+                            <div class="flex justify-between items-end mb-0.5">
+                                <InputLabel value="Email Address *" class="text-[8px] font-bold uppercase text-slate-500" />
+                                <button type="button" @click="generateAdminEmail" class="text-[8px] text-blue-600 dark:text-blue-400 font-black uppercase tracking-widest hover:underline">
+                                    Auto @LMS.COM
+                                </button>
+                            </div>
+                            <input v-model="form.email" type="email" :class="inputClass" placeholder="e.g. user@lms.com" required />
                             <InputError :message="form.errors.email" class="mt-1 text-[9px]" />
                         </div>
 
-                        <div class="grid grid-cols-2 gap-3">
+                        <!-- Role & Department / Program Grid -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                                 <InputLabel value="Account Role *" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
                                 <select v-model="form.role" :class="inputClass" class="cursor-pointer font-bold uppercase tracking-widest dark:[color-scheme:dark]" required>
                                     <option value="student" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Student</option>
                                     <option value="teacher" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Teacher</option>
-                                    <option value="dean" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Dean (Oversight)</option>
+                                    <option value="dean" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Dean</option>
                                     <option value="admin" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Administrator</option>
                                 </select>
                             </div>
                             
+                            <!-- Department dropdown for Teacher / Dean -->
                             <div v-if="form.role === 'teacher' || form.role === 'dean'">
                                 <InputLabel value="Assign Department *" class="text-[8px] font-bold uppercase text-purple-500 mb-0.5" />
                                 <select v-model="form.department_id" :class="inputClass" class="cursor-pointer border-purple-200 dark:border-purple-800 focus:ring-purple-500 dark:[color-scheme:dark]" required>
@@ -772,20 +811,10 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 </select>
                                 <InputError :message="form.errors.department_id" class="mt-1 text-[9px]" />
                             </div>
-                            <div v-else>
-                                <div class="flex justify-between items-end mb-0.5">
-                                    <InputLabel value="School ID / No." class="text-[8px] font-bold uppercase text-slate-500" />
-                                    <button type="button" @click="generateSchoolId" class="text-[8px] text-blue-600 dark:text-blue-400 font-black uppercase tracking-widest hover:underline">
-                                        Auto-ID
-                                    </button>
-                                </div>
-                                <input v-model="form.school_id" type="text" :class="inputClass" :required="form.role !== 'admin'" />
-                            </div>
-                        </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div v-if="form.role === 'student'">
-                                <InputLabel value="Program / Course" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
+                            <!-- Program dropdown for Student -->
+                            <div v-else-if="form.role === 'student'">
+                                <InputLabel value="Program / Course *" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
                                 <select v-model="form.program" :class="inputClass" required class="cursor-pointer dark:[color-scheme:dark]">
                                     <option value="" disabled class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Select a Program...</option>
                                     <option value="BS Information Technology" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">BS Information Technology</option>
@@ -797,13 +826,44 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 </select>
                                 <InputError :message="form.errors.program" class="mt-1 text-[9px]" />
                             </div>
-                            <div :class="{'col-span-2': form.role !== 'student'}">
-                                <InputLabel value="Mobile Number" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
-                                <input v-model="form.contact_number" type="text" :class="inputClass" required />
+                            
+                            <div v-else class="flex flex-col justify-end">
+                                <span class="text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 p-2 bg-slate-50 dark:bg-slate-900/50 rounded border border-slate-200 dark:border-slate-700 text-center">
+                                    Full System Access
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Identification & Contact Number Grid -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <div class="flex justify-between items-end mb-0.5">
+                                    <InputLabel 
+                                        :value="(form.role === 'teacher' || form.role === 'dean' || form.role === 'admin') ? 'Employee ID *' : 'School ID *'" 
+                                        class="text-[8px] font-bold uppercase text-slate-500" 
+                                    />
+                                    <button type="button" @click="generateSchoolId" class="text-[8px] text-blue-600 dark:text-blue-400 font-black uppercase tracking-widest hover:underline">
+                                        Auto-ID
+                                    </button>
+                                </div>
+                                <input 
+                                    v-model="form.school_id" 
+                                    type="text" 
+                                    :class="inputClass" 
+                                    :placeholder="(form.role === 'teacher' || form.role === 'dean') ? 'e.g. EMP-2026-10023' : form.role === 'admin' ? 'e.g. ADM-2026-0001' : 'e.g. 2026-12345'" 
+                                    required 
+                                />
+                                <InputError :message="form.errors.school_id" class="mt-1 text-[9px]" />
+                            </div>
+
+                            <div>
+                                <InputLabel value="Mobile Number *" class="text-[8px] font-bold uppercase text-slate-500 mb-0.5" />
+                                <input v-model="form.contact_number" type="text" :class="inputClass" placeholder="09xxxxxxxxx" required />
                                 <InputError :message="form.errors.contact_number" class="mt-1 text-[9px]" />
                             </div>
                         </div>
 
+                        <!-- Temporary Password Box -->
                         <div class="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-700/50 mt-4">
                             <div class="flex justify-between items-end mb-1">
                                 <InputLabel value="Temporary Password *" class="text-[8px] font-bold uppercase text-slate-500" />

@@ -282,14 +282,18 @@ class AdminDashboardController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
+            'email' => 'required|string|email|max:255|unique:users,email',
             'role' => 'required|in:admin,dean,teacher,student',
-            'department_id' => 'nullable|exists:departments,id',
-            'school_id' => 'nullable|string|max:50',
-            'program' => 'nullable|string|max:100',
-            'contact_number' => 'nullable|string|max:20',
-            'avatar' => 'nullable|string|max:255',
+            'school_id' => 'required|string|max:50',
+            'contact_number' => 'required|string|max:20',
+            'department_id' => 'required_if:role,teacher,dean|nullable|exists:departments,id',
+            'program' => 'required_if:role,student|nullable|string|max:100',
             'password' => ['required', Rules\Password::defaults()],
+        ], [
+            'school_id.required' => 'The ID / Employee number is required.',
+            'contact_number.required' => 'The mobile contact number is required.',
+            'department_id.required_if' => 'Please assign a department for this account.',
+            'program.required_if' => 'Please select a degree program for the student.',
         ]);
 
         $user = User::create([
@@ -298,7 +302,7 @@ class AdminDashboardController extends Controller
             'role' => $request->role,
             'department_id' => in_array($request->role, ['dean', 'teacher']) ? $request->department_id : null,
             'school_id' => $request->school_id,
-            'program' => $request->program,
+            'program' => $request->role === 'student' ? $request->program : null,
             'contact_number' => $request->contact_number,
             'password' => Hash::make($request->password),
             'email_verified_at' => now(), 
@@ -306,7 +310,6 @@ class AdminDashboardController extends Controller
 
         return back()->with('success', ucfirst($request->role) . ' account created and automatically verified.');
     }
-
     public function bulkToggleUserStatus(Request $request)
     {
         $request->validate([
