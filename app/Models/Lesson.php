@@ -1,16 +1,16 @@
-<?php 
+<?php
 
-namespace App\Models; 
+namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory; 
-use Illuminate\Database\Eloquent\Model; 
-use Illuminate\Database\Eloquent\SoftDeletes; 
-use Illuminate\Support\Facades\Storage; 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
-class Lesson extends Model     
+class Lesson extends Model
 {
-    use HasFactory, SoftDeletes;     
-    
+    use HasFactory, SoftDeletes;
+
     protected $fillable = [
         'course_id', 
         'title', 
@@ -21,25 +21,27 @@ class Lesson extends Model
         'approval_status', 
         'rejection_reason', 
         'is_archived'
-    ];     
-    
+    ];
+
     protected $casts = [
         'available_from' => 'datetime', 
         'available_until' => 'datetime', 
         'is_archived' => 'boolean'
-    ];     
-    
-    protected static function boot()     
-    {         
-        parent::boot();         
-        static::forceDeleted(function ($lesson) {             
-            if ($lesson->attachment_path) {                 
-                Storage::disk('s3')->delete($lesson->attachment_path);            
-            }         
-        });     
-    }     
-    
-    public function course() { 
-        return $this->belongsTo(Course::class); 
-    } 
+    ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::forceDeleted(function ($lesson) {
+            if ($lesson->attachment_path) {
+                // CLOUDFLARE R2 RESTORED
+                Storage::disk('s3')->delete($lesson->attachment_path);
+            }
+        });
+    }
+
+    public function course() {
+        return $this->belongsTo(Course::class);
+    }
 }
