@@ -12,6 +12,7 @@ import {
     ChevronLeft, ChevronRight, RefreshCw, BarChart3,
     History, UserPlus, Megaphone, Settings, ChevronDown, X, AlertTriangle, ChevronRightSquare
 } from 'lucide-vue-next';
+import InputError from '@/Components/InputError.vue';
 
 // Registered BarElement for the new chart
 ChartJS.register(
@@ -58,11 +59,12 @@ const createForm = useForm({
     role: 'student'
 });
 
+// UPDATED: Form fields now perfectly match the Calendar GlobalEvent backend
 const broadcastForm = useForm({
     title: '',
     description: '',
-    audience: 'all',
     type: 'event',
+    audience: 'all',
     start_date: '',
     end_date: ''
 });
@@ -213,11 +215,10 @@ const lineChartOptions = {
     interaction: { intersect: false, mode: 'index' }
 };
 
-// Ensure 4th color (Amber) is ready for the "Dean" role
 const donutData = computed(() => ({
     labels: props.demographics?.labels || [],
     datasets: [{
-        backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'], // Blue, Purple, Emerald, Amber (Dean), Red
+        backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444'], 
         borderWidth: 0,
         data: props.demographics?.data || [],
     }]
@@ -230,7 +231,6 @@ const donutOptions = {
     plugins: { legend: { position: 'right', labels: { usePointStyle: true, padding: 8, font: { size: 8 } } } }
 };
 
-// Bar Chart Pagination Logic (10 items max)
 const barPage = ref(0);
 const barItemsPerPage = 10;
 
@@ -305,18 +305,16 @@ const barChartOptions = {
                 
                 <div class="flex items-center gap-2 shrink-0">
                     
-                    <!-- Quick Action Dropdown -->
                     <div class="relative group">
                         <button class="flex items-center gap-1 bg-blue-600 text-white px-2.5 py-1 rounded border border-blue-700 shadow-sm transition hover:bg-blue-500 text-[9px] font-black uppercase tracking-widest">
                             <Zap class="w-3 h-3" /> <span class="hidden sm:inline">Quick Action</span> <ChevronDown class="w-3 h-3 ml-0.5" />
                         </button>
-                        <!-- Dropdown Menu -->
                         <div class="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[990] overflow-hidden flex flex-col py-1">
                             <button @click="isCreateModalOpen = true" class="w-full text-left flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
                                 <UserPlus class="w-3.5 h-3.5 text-blue-500" /> Create Account
                             </button>
                             <button @click="isBroadcastModalOpen = true" class="w-full text-left flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
-                                <Megaphone class="w-3.5 h-3.5 text-amber-500" /> Broadcast Update
+                                <Megaphone class="w-3.5 h-3.5 text-amber-500" /> Broadcast Event
                             </button>
                         </div>
                     </div>
@@ -667,61 +665,66 @@ const barChartOptions = {
             </div>
         </div>
 
-        <!-- Broadcast Update Modal (Calendar Sync) -->
+        <!-- UPDATED: Broadcast Calendar Event Modal -->
         <div v-if="isBroadcastModalOpen" class="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-            <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
-                <div class="p-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 shrink-0">
+            <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
+                <div class="p-3 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
                     <h3 class="text-xs font-black uppercase tracking-widest text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        <Megaphone class="w-4 h-4 text-amber-500" /> Post to Calendar
+                        <Megaphone class="w-4 h-4 text-amber-500" /> Post Calendar Event
                     </h3>
                     <button @click="isBroadcastModalOpen = false" class="text-slate-400 hover:text-red-500 transition"><X class="w-4 h-4" /></button>
                 </div>
-                <form @submit.prevent="submitBroadcast" class="flex flex-col min-h-0">
-                    <div class="p-4 space-y-3 overflow-y-auto custom-scrollbar">
-                        <div>
-                            <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Event Title</label>
-                            <input type="text" v-model="broadcastForm.title" required class="w-full text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500">
-                        </div>
-                        
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Target Audience</label>
-                                <select v-model="broadcastForm.audience" class="w-full text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 cursor-pointer">
-                                    <option value="all">Everyone</option>
-                                    <option value="teacher">Teachers Only</option>
-                                    <option value="student">Students Only</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Event Type</label>
-                                <select v-model="broadcastForm.type" class="w-full text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 cursor-pointer">
-                                    <option value="event">General Event</option>
-                                    <option value="academic">Academic Deadline</option>
-                                    <option value="holiday">Holiday</option>
-                                    <option value="maintenance">System Maintenance</option>
-                                </select>
-                            </div>
-                        </div>
+                <form @submit.prevent="submitBroadcast" class="p-4 space-y-3">
+                    <div>
+                        <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Event Title *</label>
+                        <input type="text" v-model="broadcastForm.title" required class="w-full text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500">
+                        <InputError :message="broadcastForm.errors.title" class="mt-1 text-[9px]" />
+                    </div>
 
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Start Date</label>
-                                <input type="date" v-model="broadcastForm.start_date" required class="w-full text-[10px] font-bold rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 dark:[color-scheme:dark]">
-                            </div>
-                            <div>
-                                <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">End Date (Optional)</label>
-                                <input type="date" v-model="broadcastForm.end_date" :min="broadcastForm.start_date" class="w-full text-[10px] font-bold rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 dark:[color-scheme:dark]">
-                            </div>
-                        </div>
-
+                    <div class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Description</label>
-                            <textarea v-model="broadcastForm.description" required rows="3" class="w-full text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 custom-scrollbar resize-none"></textarea>
+                            <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Event Type *</label>
+                            <select v-model="broadcastForm.type" required class="w-full text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 cursor-pointer">
+                                <option value="event">General Event</option>
+                                <option value="academic">Academic Deadline</option>
+                                <option value="holiday">Holiday / Break</option>
+                                <option value="maintenance">System Maintenance</option>
+                            </select>
+                            <InputError :message="broadcastForm.errors.type" class="mt-1 text-[9px]" />
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Target Audience *</label>
+                            <select v-model="broadcastForm.audience" required class="w-full text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 cursor-pointer">
+                                <option value="all">Everyone</option>
+                                <option value="teacher">Teachers Only</option>
+                                <option value="student">Students Only</option>
+                            </select>
+                            <InputError :message="broadcastForm.errors.audience" class="mt-1 text-[9px]" />
                         </div>
                     </div>
-                    <div class="p-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2 bg-slate-50 dark:bg-slate-900/50 shrink-0">
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Start Date/Time *</label>
+                            <input type="datetime-local" v-model="broadcastForm.start_date" required class="w-full text-[10px] font-bold rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 dark:[color-scheme:dark]">
+                            <InputError :message="broadcastForm.errors.start_date" class="mt-1 text-[9px]" />
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">End Date/Time</label>
+                            <input type="datetime-local" v-model="broadcastForm.end_date" :min="broadcastForm.start_date" class="w-full text-[10px] font-bold rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 dark:[color-scheme:dark]">
+                            <InputError :message="broadcastForm.errors.end_date" class="mt-1 text-[9px]" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Description / Message *</label>
+                        <textarea v-model="broadcastForm.description" required rows="3" class="w-full text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white px-2 py-1.5 focus:ring-amber-500 focus:border-amber-500 custom-scrollbar resize-none"></textarea>
+                        <InputError :message="broadcastForm.errors.description" class="mt-1 text-[9px]" />
+                    </div>
+
+                    <div class="pt-2 flex justify-end gap-2 border-t border-slate-100 dark:border-slate-800 mt-2">
                         <button type="button" @click="isBroadcastModalOpen = false" class="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition">Cancel</button>
-                        <button type="submit" :disabled="broadcastForm.processing" class="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest bg-amber-500 hover:bg-amber-400 text-white rounded transition disabled:opacity-50 shadow-sm">Post Event</button>
+                        <button type="submit" :disabled="broadcastForm.processing" class="px-4 py-1.5 text-[9px] font-black uppercase tracking-widest bg-amber-500 hover:bg-amber-400 text-white rounded shadow-sm transition disabled:opacity-50">Post to Calendar</button>
                     </div>
                 </form>
             </div>
