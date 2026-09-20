@@ -375,7 +375,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     Pending <span v-if="pendingMaterials.length" class="bg-orange-100 text-orange-600 px-1 rounded text-[8px]">{{ pendingMaterials.length }}</span>
                 </button>
                 <button @click="activeTab = 'approved'" class="flex-1 shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'approved' ? 'bg-white dark:bg-slate-700 text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
-                    Approved <span v-if="approvedMaterials.length" class="bg-emerald-100 text-emerald-600 px-1 rounded text-[8px]">{{ approvedMaterials.length }}</span>
+                    Approve <span v-if="approvedMaterials.length" class="bg-emerald-100 text-emerald-600 px-1 rounded text-[8px]">{{ approvedMaterials.length }}</span>
                 </button>
                 <button @click="activeTab = 'rejected'" class="flex-1 shrink-0 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-md transition-all flex items-center justify-center gap-1" :class="activeTab === 'rejected' ? 'bg-white dark:bg-slate-700 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'">
                     Rejected <span v-if="rejectedMaterials.length" class="bg-red-100 text-red-600 px-1 rounded text-[8px]">{{ rejectedMaterials.length }}</span>

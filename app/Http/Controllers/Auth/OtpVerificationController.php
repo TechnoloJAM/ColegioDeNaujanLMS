@@ -24,26 +24,8 @@ class OtpVerificationController extends Controller
             return redirect()->route('login');
         }
 
-        // Check if a fresh OTP was already sent within the last 90 seconds
-        $recentOtp = OtpToken::where('email', $email)
-            ->where('purpose', 'registration')
-            ->where('created_at', '>=', \Carbon\Carbon::now()->subSeconds(90))
-            ->first();
-
-        // If no active OTP exists (e.g., they just logged in), generate and send one automatically
-        if (!$recentOtp) {
-            OtpToken::where('email', $email)->where('purpose', 'registration')->delete();
-            
-            $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-            
-            OtpToken::create([
-                'email' => $email,
-                'token' => $code,
-                'purpose' => 'registration',
-            ]);
-            
-            \Illuminate\Support\Facades\Mail::to($email)->send(new \App\Mail\OtpMail($code));
-        }
+        // Removed the auto-generate block here to prevent double-sending on page load. 
+        // We now wait for the user to explicitly click the "Send Verification Code" button.
 
         return \Inertia\Inertia::render('Auth/VerifyOtp', ['email' => $email]);
     }
@@ -71,9 +53,11 @@ class OtpVerificationController extends Controller
 
         // Success! Verify and Login if not already logged in
         $user = User::where('email', $request->email)->first();
+
         if ($user) {
             $user->email_verified_at = now();
             $user->save();
+            
             event(new Verified($user));
             
             if (!Auth::check()) {
@@ -105,6 +89,6 @@ class OtpVerificationController extends Controller
 
         Mail::to($request->email)->send(new OtpMail($code));
 
-        return back()->with('success', 'A new 90-second code has been sent.');
+        return back()->with('success', 'A 6-digit code has been sent to your email.');
     }
 }

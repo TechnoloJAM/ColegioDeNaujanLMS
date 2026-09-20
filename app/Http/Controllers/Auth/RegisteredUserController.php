@@ -28,7 +28,6 @@ class RegisteredUserController extends Controller
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-
     public function store(Request $request): \Illuminate\Http\RedirectResponse
     {
         $request->validate([
@@ -44,18 +43,7 @@ class RegisteredUserController extends Controller
             'role' => 'student',
         ]);
 
-        // Generate the 60-second OTP
-        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        
-        \App\Models\OtpToken::create([
-            'email' => $user->email,
-            'token' => $code,
-            'purpose' => 'registration',
-        ]);
-
-        \Illuminate\Support\Facades\Mail::to($user->email)->send(new \App\Mail\OtpMail($code));
-
-        // Pass the email to the session so the OTP screen knows who is verifying
+        // Auto-send OTP logic removed. Now handled by the user clicking "Send Code" on the Verify page.
         session()->put('otp_email', $user->email);
 
         return redirect()->route('verification.notice');

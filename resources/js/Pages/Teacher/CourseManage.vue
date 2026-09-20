@@ -8,7 +8,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import RichTextEditor from '@/Components/RichTextEditor.vue';
 import { 
     ChevronLeft, Calendar, Clock, Trophy, 
-    FileText, Paperclip, ExternalLink, Send, Undo2, Filter, Eye, Download, CheckCircle2, Trash2 
+    FileText, Paperclip, ExternalLink, Send, Undo2, Filter, Eye, Download, CheckCircle2, Trash2, Plus 
 } from 'lucide-vue-next';
 
 const props = defineProps({ course: Object });
@@ -17,7 +17,6 @@ const currentUser = page.props.auth.user;
 
 const requireApproval = computed(() => page.props.requireApproval ?? true);
 
-// NEW: Smart Back Button Logic
 const backUrl = computed(() => {
     if (currentUser.role === 'dean') return route('dean.dashboard');
     if (currentUser.role === 'admin') return route('admin.courses.index');
@@ -39,11 +38,50 @@ const lessonToResubmit = ref(null);
 const showUnarchiveModal = ref(false);
 const lessonToUnarchive = ref(null);
 
+// --- FILE PREVIEW LOGIC ---
+const showMaterialPreview = ref(false);
+const selectedMaterialPath = ref(null);
+const selectedMaterialName = ref('');
+
 const getFileUrl = (path) => {
     if (!path) return '';
+    // If it's a local browser blob or external URL, return as-is
+    if (path.startsWith('blob:') || path.startsWith('http://') || path.startsWith('https://')) {
+        return path;
+    }
     const cleanPath = path.replace(/^\/storage\//, '');
     return `${usePage().props.env.AWS_URL}/${cleanPath}`;
 };
+
+const getFileName = (path) => {
+    if (!path || typeof path !== 'string') return 'Attached File';
+    if (path.startsWith('blob:')) return selectedMaterialName.value || 'Local File';
+    const clean = path.split('?')[0];
+    return clean.split('/').pop() || 'Attached File';
+};
+
+const openMaterialPreview = (path, name = '') => {
+    selectedMaterialPath.value = String(path || '');
+    selectedMaterialName.value = name || getFileName(path);
+    showMaterialPreview.value = true;
+};
+
+const previewLocalFile = (file) => {
+    const fileUrl = URL.createObjectURL(file);
+    // Route it through the Preview Modal instead of window.open()
+    openMaterialPreview(fileUrl, file.name);
+};
+
+const isPdf = (path) => {
+    const check = selectedMaterialName.value || path;
+    return typeof check === 'string' && check.toLowerCase().endsWith('.pdf');
+};
+
+const isImage = (path) => {
+    const check = selectedMaterialName.value || path;
+    return typeof check === 'string' && Boolean(check.match(/\.(jpeg|jpg|png|gif|webp)$/i));
+};
+// --------------------------
 
 const formResubmit = useForm({ 
     file: null,
@@ -63,7 +101,6 @@ const formatForInput = (dateStr) => {
     return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 };
 
-// Calculate current local datetime to prevent past dates
 const minDateTime = computed(() => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -117,25 +154,16 @@ const formAssignment = useForm({
     hide_from_late: false 
 });
 
-// --- NEW ASSIGNMENT FILE HANDLING LOGIC ---
 const handleAssignmentFileSelect = (e) => {
     const selectedFiles = Array.from(e.target.files);
     formAssignment.files = [...formAssignment.files, ...selectedFiles];
-    e.target.value = ''; // Reset input to allow selecting same file again
+    e.target.value = ''; 
 };
 
 const removeAssignmentFile = (index) => {
     formAssignment.files.splice(index, 1);
 };
 
-const previewLocalFile = (file) => {
-    const fileUrl = URL.createObjectURL(file);
-    window.open(fileUrl, '_blank');
-};
-// ------------------------------------------
-
-
-// --- MATERIALS LOGIC ---
 const materialFilter = ref('active');
 
 const activeMaterials = computed(() => {
@@ -202,7 +230,6 @@ const formatRichText = (htmlContent) => {
     return processed;
 };
 
-// --- STUDENTS LOGIC ---
 const pendingStudents = computed(() => props.course.enrollments ? props.course.enrollments.filter(e => e.status === 'pending' && e.user) : []);
 const approvedStudentsRaw = computed(() => props.course.enrollments ? props.course.enrollments.filter(e => e.status === 'approved' && e.user) : []);
 
@@ -237,7 +264,6 @@ const getRankClass = (rank) => {
     return 'bg-blue-50 text-blue-600 border border-blue-100'; 
 };
 
-// --- TASKS LOGIC ---
 const filteredAssignments = computed(() => {
     const now = new Date();
     if (!props.course.assignments) return [];
@@ -260,7 +286,6 @@ const approveStudent = (userId) => router.patch(route('teacher.courses.enrollmen
 const removeStudent = (userId) => { if(confirm('Remove this student from the class?')) router.delete(route('teacher.courses.enrollments.destroy', { course: props.course.id, user: userId }), { preserveScroll: true }); };
 const toggleComments = (announcement) => { announcement.showComments = !announcement.showComments; };
 const copyCode = () => { navigator.clipboard.writeText(props.course.enrollment_code); alert('Course Code Copied!'); };
-
 const deleteItem = (url, skipConfirm = false) => { 
     if (skipConfirm || confirm('Are you sure you want to delete this?')) router.delete(url, { preserveScroll: true }); 
 };
@@ -355,7 +380,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                 </button>
 
                 <button @click="showAssignmentModal = true" class="group relative flex items-center justify-center w-12 h-12 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 text-blue-600 hover:text-white hover:bg-blue-600 hover:border-blue-600 transition-all shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:shadow-xl focus:outline-none shrink-0 md:shadow-sm md:hover:shadow-md">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <Plus class="w-5 h-5" />
                     <span class="hidden md:block absolute left-full ml-3 px-2 py-1 bg-slate-800 text-white text-[10px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">Create Task</span>
                 </button>
 
@@ -397,7 +422,6 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 Leaderboard
                             </button>
                         </div>
-
                         <div v-if="studentSubTab !== 'pending'" class="flex items-center gap-2 w-full sm:w-auto">
                             <label class="text-[9px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Sort By:</label>
                             <select v-model="studentSort" class="h-7 py-0 pl-2 pr-6 rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-[10px] font-bold uppercase tracking-wider focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-sm cursor-pointer transition-colors w-full sm:w-auto">
@@ -680,12 +704,13 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             
                             <div class="flex flex-wrap items-center justify-end gap-1.5 w-full sm:w-auto shrink-0 mt-2 sm:mt-0">
                                 
-                               <a :href="getFileUrl(lesson.attachment_path)" target="_blank" class="p-1.5 text-slate-500 bg-slate-50 hover:text-blue-600 hover:bg-blue-50 dark:bg-slate-900/50 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-blue-900/30 rounded transition shadow-sm border border-slate-200 dark:border-slate-700" title="View">
+                               <button @click.prevent="openMaterialPreview(lesson.attachment_path)" class="p-1.5 text-slate-500 bg-slate-50 hover:text-blue-600 hover:bg-blue-50 dark:bg-slate-900/50 dark:text-slate-400 dark:hover:text-blue-400 dark:hover:bg-blue-900/30 rounded transition shadow-sm border border-slate-200 dark:border-slate-700" title="View">
                                     <Eye class="w-3.5 h-3.5" />
-                                </a>
+                                </button>
                                 <a :href="getFileUrl(lesson.attachment_path)" download class="p-1.5 text-emerald-600 bg-emerald-50 hover:text-white hover:bg-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-500 dark:hover:text-white dark:hover:bg-emerald-600 rounded transition shadow-sm border border-emerald-200 dark:border-emerald-800" title="Download">
                                     <Download class="w-3.5 h-3.5" />
                                 </a>
+
                                 <!-- DEAN HIDE: Material Edit Actions -->
                                 <template v-if="currentUser.role !== 'dean'">
                                     <button v-if="lesson.approval_status === 'rejected'" @click="openResubmitModal(lesson)" class="text-[9px] font-black uppercase tracking-widest bg-blue-600 text-white border border-blue-600 px-3 py-1.5 rounded hover:bg-blue-500 transition shadow-sm">
@@ -711,6 +736,37 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
 
             </div>
         </div>
+
+        <!-- MATERIAL PREVIEW MODAL -->
+        <Modal :show="showMaterialPreview" @close="showMaterialPreview = false" maxWidth="4xl">
+            <div class="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[85vh]">
+                <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
+                    <h3 class="font-black text-sm text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-tight">
+                        <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                            <Eye class="w-4 h-4" /> 
+                        </div>
+                        Material Preview
+                    </h3>
+                    <button @click="showMaterialPreview = false" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-300 transition shrink-0">&times;</button>
+                </div>
+                
+                <div class="flex-1 p-4 bg-slate-100 dark:bg-slate-950/50 flex flex-col items-center justify-center relative overflow-hidden">
+                    <iframe v-if="isPdf(selectedMaterialPath)" :src="getFileUrl(selectedMaterialPath)" class="w-full h-full border-none rounded-lg shadow-sm bg-white dark:bg-slate-900"></iframe>
+                    <img v-else-if="isImage(selectedMaterialPath)" :src="getFileUrl(selectedMaterialPath)" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
+                    
+                    <div v-else class="text-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-sm w-full">
+                        <FileText class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" />
+                        <p class="text-slate-500 font-black mb-1 text-[11px] uppercase tracking-widest">Preview unavailable</p>
+                        <p class="text-slate-400 text-[10px] font-bold mb-6">This file type cannot be viewed directly.</p>
+                        <div class="flex flex-col gap-2">
+                            <a :href="getFileUrl(selectedMaterialPath)" target="_blank" :download="selectedMaterialName" class="inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white transition text-[10px] font-black uppercase tracking-widest px-4 py-3 rounded-lg shadow-sm w-full">
+                                <Download class="w-4 h-4" /> Download File
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </Modal>
 
         <!-- MODALS REMAIN THE SAME -->
         <Modal :show="showUnarchiveModal" @close="showUnarchiveModal = false" maxWidth="sm">
@@ -751,6 +807,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                     <svg class="w-4 h-4 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                     Upload Material
                 </h3>
+
                 <form @submit.prevent="submitLesson" class="space-y-4">
                     <div>
                         <InputLabel value="Material Title *" class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1" />
@@ -865,7 +922,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
         <Modal :show="showAssignmentModal" @close="showAssignmentModal = false" maxWidth="md">
             <div class="p-5 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
                 <h3 class="font-black text-sm text-slate-900 dark:text-white uppercase tracking-tight mb-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    <Plus class="w-4 h-4 text-blue-600" />
                     Create Task
                 </h3>
                 <form @submit.prevent="submitAssignment" class="space-y-3.5">
@@ -986,6 +1043,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
     margin-top: 0.25rem;
     margin-bottom: 0.25rem;
 }
+
 .scrollbar-hide::-webkit-scrollbar {
     display: none;
 }

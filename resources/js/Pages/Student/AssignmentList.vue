@@ -4,11 +4,10 @@ import InputError from '@/Components/InputError.vue';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
-import { Search, Filter, FileText, Clock, CheckCircle2, Eye, Download, AlertTriangle, Paperclip, Trophy, Undo2, X } from 'lucide-vue-next';
+import { Search, Filter, FileText, Clock, CheckCircle2, Eye, Download, AlertTriangle, Paperclip, Trophy, Undo2, X, Globe } from 'lucide-vue-next';
 
 const props = defineProps({ courses: Array });
 
-// Read Hidden Courses storage key
 const page = usePage();
 const userId = page.props.auth.user.id;
 const storageKey = `lms_hidden_courses_${userId}`;
@@ -36,18 +35,10 @@ const countAssignments = (c, type) => {
     }).length;
 };
 
-const courseSearchQuery = ref('');
 const courseSortOrder = ref('tasks');
 
 const processedCourses = computed(() => {
-    let filtered = visibleCourses.value;
-    
-    if (courseSearchQuery.value.trim() !== '') {
-        const q = courseSearchQuery.value.toLowerCase();
-        filtered = filtered.filter(c => c.title.toLowerCase().includes(q));
-    }
-
-    let sorted = [...filtered].sort((a, b) => {
+    let sorted = [...visibleCourses.value].sort((a, b) => {
         if (courseSortOrder.value === 'tasks') {
             return countAssignments(b, 'upcoming') - countAssignments(a, 'upcoming');
         } else if (courseSortOrder.value === 'newest') {
@@ -65,13 +56,11 @@ const processedCourses = computed(() => {
     return sorted;
 });
 
-const selectedCourseId = ref(processedCourses.value.length > 0 ? processedCourses.value[0].id : null);
+const selectedCourseId = ref('all');
 
 watch(processedCourses, (newCourses) => {
-    if (newCourses.length > 0 && !newCourses.find(c => c.id === selectedCourseId.value)) {
-        selectedCourseId.value = newCourses[0].id;
-    } else if (newCourses.length === 0) {
-        selectedCourseId.value = null;
+    if (selectedCourseId.value !== 'all' && !newCourses.find(c => c.id === selectedCourseId.value)) {
+        selectedCourseId.value = 'all';
     }
 });
 
@@ -91,11 +80,24 @@ const formSubmission = useForm({
 const selectCourse = (id) => { selectedCourseId.value = id; };
 const handleImageError = (id) => { imageErrors.value[id] = true; };
 const selectedCourse = computed(() => visibleCourses.value.find(c => c.id === selectedCourseId.value));
+const isMainAreaVisible = computed(() => selectedCourseId.value === 'all' || selectedCourse.value);
+
+const allAssignments = computed(() => {
+    let coursesToMap = selectedCourseId.value === 'all' 
+        ? processedCourses.value 
+        : processedCourses.value.filter(c => c.id === selectedCourseId.value);
+        
+    return coursesToMap.flatMap(c => 
+        (c.assignments || []).map(a => ({
+            ...a,
+            course_title: c.title,
+        }))
+    );
+});
 
 const pendingTasksCount = computed(() => {
-    if (!selectedCourse.value || !selectedCourse.value.assignments) return 0;
     const now = new Date();
-    return selectedCourse.value.assignments.filter(a => {
+    return allAssignments.value.filter(a => {
         const done = isCompleted(a); 
         const past = a.due_date && new Date(a.due_date) < now;
         return !done && (!past || !a.due_date);
@@ -103,9 +105,8 @@ const pendingTasksCount = computed(() => {
 });
 
 const pastDueTasksCount = computed(() => {
-    if (!selectedCourse.value || !selectedCourse.value.assignments) return 0;
     const now = new Date();
-    return selectedCourse.value.assignments.filter(a => {
+    return allAssignments.value.filter(a => {
         const done = isCompleted(a); 
         const past = a.due_date && new Date(a.due_date) < now;
         return !done && past;
@@ -113,11 +114,10 @@ const pastDueTasksCount = computed(() => {
 });
 
 const filteredAssignments = computed(() => {
-    if (!selectedCourse.value) return [];
-         
-    let filtered = selectedCourse.value.assignments.filter(a => {
+    const now = new Date();
+    let filtered = allAssignments.value.filter(a => {
         const done = isCompleted(a); 
-        const past = a.due_date && new Date(a.due_date) < new Date();
+        const past = a.due_date && new Date(a.due_date) < now;
         
         let tabMatch = false;
         if (activeTab.value === 'completed') tabMatch = done;
@@ -136,10 +136,91 @@ const filteredAssignments = computed(() => {
     });
 
     filtered.sort((a, b) => {
-        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+        const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+        
+        if (activeTab.value === 'past' || activeTab.value === 'completed') {
+            return dateB - dateA; 
+        }
+        return dateA - dateB; 
     });
 
     return filtered;
+});
+
+const getOrdinalNum = (n) => {
+    const s = ["th", "st", "nd", "rd"];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+};
+
+const formatGroupHeader = (dateStr) => {
+    if (!dateStr) return { label: 'No Due Date', relative: '' };
+    const d = new Date(dateStr);
+    const month = d.toLocaleString('en-US', { month: 'short' });
+    return {
+        label: `${month} ${getOrdinalNum(d.getDate())}`,
+        relative: getRelativeLabel(d)
+    };
+};
+
+const getRelativeLabel = (targetDate) => {
+    const now = new Date();
+    now.setHours(0,0,0,0);
+    const target = new Date(targetDate);
+    target.setHours(0,0,0,0);
+    
+    const diffTime = target - now;
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Due today';
+    if (diffDays === 1) return 'Due tomorrow';
+    if (diffDays === -1) return 'Due yesterday';
+    
+    if (diffDays > 1) {
+        if (diffDays < 7) return `Due in ${diffDays} days`;
+        if (diffDays < 30) return `Due in ${Math.floor(diffDays/7)} weeks`;
+        return `Due in ${Math.floor(diffDays/30)} months`;
+    } else {
+        const absDays = Math.abs(diffDays);
+        if (absDays < 7) return `Due ${absDays} days ago`;
+        if (absDays < 30) return `Due ${Math.floor(absDays/7)} weeks ago`;
+        return `Due ${Math.floor(absDays/30)} months ago`;
+    }
+};
+
+const groupedAssignments = computed(() => {
+    const groups = {};
+    
+    filteredAssignments.value.forEach(a => {
+        let key = 'no-date';
+        if (a.due_date) {
+            const d = new Date(a.due_date);
+            key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        
+        if (!groups[key]) {
+            const headerInfo = a.due_date ? formatGroupHeader(a.due_date) : { label: 'No Due Date', relative: '' };
+            groups[key] = {
+                key: key,
+                timestamp: a.due_date ? new Date(key).getTime() : Infinity,
+                dateLabel: headerInfo.label,
+                relativeLabel: headerInfo.relative,
+                tasks: []
+            };
+        }
+        groups[key].tasks.push(a);
+    });
+
+    return Object.values(groups).sort((a, b) => {
+        if (a.key === 'no-date') return 1;
+        if (b.key === 'no-date') return -1;
+        
+        if (activeTab.value === 'past' || activeTab.value === 'completed') {
+            return b.timestamp - a.timestamp;
+        }
+        return a.timestamp - b.timestamp; 
+    });
 });
 
 const isClosed = (assignment) => {
@@ -154,24 +235,16 @@ const formatDescription = (text) => {
     return clean.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline font-bold">$1</a>');
 };
 
-// CRITICAL FIX 1: Safely unpack nested JSON arrays to prevent UI Freezes
 const getPaths = (paths) => { 
     if (!paths) return [];
     let parsed = paths;
     if (typeof paths === 'string') {
-        try { 
-            parsed = JSON.parse(paths); 
-        } catch (e) { 
-            return [paths]; 
-        }
+        try { parsed = JSON.parse(paths); } catch (e) { return [paths]; }
     }
-    if (Array.isArray(parsed)) {
-        return parsed.flat().map(String);
-    }
+    if (Array.isArray(parsed)) { return parsed.flat().map(String); }
     return [String(parsed)];
 };
 
-// CRITICAL FIX 2: Safely extract Filename from paths
 const getFileName = (path) => {
     if (!path || typeof path !== 'string') return 'Attached File';
     const parts = path.split('/');
@@ -208,7 +281,6 @@ const openDetails = (a) => {
     showDetailsModal.value = true; 
 };
 
-// CRITICAL FIX 3: Cast selected preview path cleanly to string
 const openMaterialPreview = (path) => {
     selectedMaterialPath.value = String(path);
     showMaterialPreview.value = true;
@@ -236,14 +308,7 @@ const undoTurnIn = () => {
 const formatDate = (dateString) => {
     if (!dateString) return 'None';
     const d = new Date(dateString);
-    return d.toLocaleString('en-US', {
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric', 
-        hour: 'numeric', 
-        minute: '2-digit', 
-        hour12: true 
-    });
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
 };
 </script>
 
@@ -265,13 +330,13 @@ const formatDate = (dateString) => {
             <!-- MOBILE COURSE SELECTOR & FILTERS -->
             <div class="md:hidden w-full px-2 mb-3 z-20 flex flex-col gap-2">
                 <div class="flex gap-2">
-                    <div class="relative flex-1">
-                        <div class="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
-                            <Search class="h-3.5 w-3.5 text-slate-400" />
-                        </div>
-                        <input v-model="courseSearchQuery" type="text" placeholder="Search class..." class="w-full h-8 pl-7 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 text-xs shadow-sm transition-colors placeholder-slate-400" />
-                    </div>
-                    <select v-model="courseSortOrder" class="w-1/3 min-w-[100px] h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 shadow-sm transition-colors cursor-pointer py-0 pl-2 pr-6">
+                    <select @change="(e) => selectCourse(e.target.value === 'all' ? 'all' : Number(e.target.value))" class="w-full text-xs font-black uppercase tracking-widest bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer truncate transition-colors">
+                        <option value="all" :selected="selectedCourseId === 'all'">ALL CLASSES</option>
+                        <option v-for="c in processedCourses" :key="c.id" :value="c.id" :selected="c.id === selectedCourseId">
+                            {{ c.title }} ({{ countAssignments(c, 'upcoming') }} To Do)
+                        </option>
+                    </select>
+                    <select v-model="courseSortOrder" class="w-1/3 min-w-[100px] text-[9px] font-bold uppercase tracking-widest bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 rounded-lg p-2.5 shadow-sm cursor-pointer transition-colors dark:[color-scheme:dark]">
                         <option value="tasks">Most Tasks</option>
                         <option value="newest">Newest</option>
                         <option value="oldest">Oldest</option>
@@ -279,12 +344,6 @@ const formatDate = (dateString) => {
                         <option value="z_a">Z-A</option>
                     </select>
                 </div>
-                <select @change="(e) => selectCourse(Number(e.target.value))" class="w-full text-xs font-black uppercase tracking-widest bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer truncate transition-colors">
-                    <option v-if="processedCourses.length === 0" disabled selected>No classes match search.</option>
-                    <option v-for="c in processedCourses" :key="c.id" :value="c.id" :selected="c.id === selectedCourseId">
-                        {{ c.title }} ({{ countAssignments(c, 'upcoming') }} To Do)
-                    </option>
-                </select>
             </div>
 
             <div class="flex-1 flex flex-col md:flex-row gap-0 md:gap-4 overflow-hidden bg-slate-50/30 md:bg-transparent rounded-none md:rounded-lg relative">
@@ -294,19 +353,11 @@ const formatDate = (dateString) => {
                     
                     <div class="p-3 border-b border-slate-100 dark:border-slate-700/50 flex flex-col gap-2.5 shrink-0 bg-white dark:bg-slate-800">
                         <h3 class="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Active Classes</h3>
-                        
-                        <div class="relative w-full">
-                            <div class="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
-                                <Search class="h-3 w-3 text-slate-400" />
-                            </div>
-                            <input v-model="courseSearchQuery" type="text" placeholder="Search class..." class="w-full h-8 pl-7 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs shadow-sm transition-colors placeholder-slate-400" />
-                        </div>
-                        
                         <div class="relative w-full">
                             <div class="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
                                 <Filter class="h-3 w-3 text-slate-400" />
                             </div>
-                            <select v-model="courseSortOrder" class="w-full h-8 pl-7 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 shadow-sm transition-colors cursor-pointer py-0 pr-6">
+                            <select v-model="courseSortOrder" class="w-full h-8 pl-7 rounded-md bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-[9px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 shadow-sm transition-colors cursor-pointer py-0 pr-6 dark:[color-scheme:dark]">
                                 <option value="tasks">Most Tasks</option>
                                 <option value="newest">Newest First</option>
                                 <option value="oldest">Oldest First</option>
@@ -317,14 +368,29 @@ const formatDate = (dateString) => {
                     </div>
                     
                     <div class="flex-col overflow-y-auto w-full p-2 gap-1 custom-scrollbar">
+                        <!-- ALL CLASSES BUTTON -->
+                        <button @click="selectCourse('all')" 
+                            class="w-full text-left transition-colors duration-150 flex items-center justify-between group border-l-4 px-2 py-2.5 mb-1"
+                            :class="selectedCourseId === 'all' ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-600 shadow-sm' : 'bg-transparent border-transparent hover:bg-slate-100 dark:hover:bg-slate-700/50'"
+                        >
+                            <div class="flex items-center gap-2.5 overflow-hidden w-full">
+                                <div class="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                    <Globe class="w-4 h-4" />
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <span class="block truncate text-xs font-black" :class="selectedCourseId === 'all' ? 'text-blue-900 dark:text-blue-100' : 'text-slate-700 dark:text-slate-200'">All Classes</span>
+                                    <span class="text-[9px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Global Task List</span>
+                                </div>
+                            </div>
+                        </button>
+
                         <div v-if="processedCourses.length === 0" class="p-6 text-center text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                            No classes match your search.
+                            No active classes.
                         </div>
+
                         <button v-for="c in processedCourses" :key="c.id" @click="selectCourse(c.id)" 
                             class="w-full text-left transition-colors duration-150 flex items-center justify-between group border-l-4 px-2 py-2.5"
-                            :class="selectedCourseId === c.id 
-                                  ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-600 shadow-sm' 
-                                  : 'bg-transparent border-transparent hover:bg-slate-100 dark:hover:bg-slate-700/50'"
+                            :class="selectedCourseId === c.id ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-600 shadow-sm' : 'bg-transparent border-transparent hover:bg-slate-100 dark:hover:bg-slate-700/50'"
                         >
                             <div class="flex items-center gap-2.5 overflow-hidden w-full">
                                 <div class="w-7 h-7 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 overflow-hidden text-[10px] font-black">
@@ -350,10 +416,11 @@ const formatDate = (dateString) => {
                 </aside>
 
                 <main class="flex-1 bg-transparent md:bg-white dark:bg-slate-800 flex flex-col md:border border-slate-200 dark:border-slate-700 md:rounded-lg overflow-hidden h-full min-h-[400px] md:shadow-sm relative">
-                    <div v-if="selectedCourse" class="flex flex-col h-full pt-0 md:pt-1">
+                    <div v-if="isMainAreaVisible" class="flex flex-col h-full pt-0 md:pt-1">
                         
                         <div class="border-b border-slate-200 dark:border-slate-700 shrink-0 bg-white dark:bg-slate-800 flex flex-col gap-2 pt-2 px-2 sm:px-4">
                             
+                            <!-- GLOBAL TASK SEARCH BAR -->
                             <div class="flex flex-col sm:flex-row gap-2 w-full mt-1">
                                 <div class="relative flex-1">
                                     <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
@@ -385,60 +452,80 @@ const formatDate = (dateString) => {
                         </div>
 
                         <div class="flex-1 overflow-y-auto p-1.5 sm:p-3 custom-scrollbar pb-24">
-                            <div v-if="filteredAssignments.length > 0" class="flex flex-col gap-1.5 sm:gap-2">
-                                
-                                <div v-for="a in filteredAssignments" :key="a.id" @click="openDetails(a)"
-                                     class="group flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2.5 p-3 sm:p-4 bg-white dark:bg-slate-800 border-l-2 sm:border-l-4 border border-slate-200 dark:border-slate-700 rounded-md sm:rounded-xl hover:shadow-md cursor-pointer transition-all duration-200 shadow-sm"
-                                     :class="activeTab === 'upcoming' ? 'border-l-blue-500 hover:border-blue-400' : activeTab === 'completed' ? 'border-l-emerald-500 hover:border-emerald-400' : 'border-l-red-500 hover:border-red-400'">
-                                     
-                                    <div class="hidden sm:flex shrink-0 w-8 h-8 rounded items-center justify-center transition-colors"
-                                         :class="activeTab === 'upcoming' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white' : activeTab === 'completed' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 group-hover:bg-red-600 group-hover:text-white'">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            <!-- MS TEAMS STYLE TASK GROUPS -->
+                            <div v-if="groupedAssignments.length > 0" class="flex flex-col gap-6">
+                                <div v-for="group in groupedAssignments" :key="group.key" class="flex flex-col">
+                                    
+                                    <!-- DATE HEADER -->
+                                    <div class="flex items-baseline gap-2 mb-2.5 px-1">
+                                        <h3 class="text-[13px] sm:text-sm font-black text-slate-900 dark:text-white">{{ group.dateLabel }}</h3>
+                                        <span v-if="group.relativeLabel" class="text-[10px] sm:text-[11px] font-bold text-slate-500">{{ group.relativeLabel }}</span>
                                     </div>
 
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex items-center justify-between gap-2">
-                                            <div class="flex items-center gap-1.5 min-w-0">
-                                                <span class="text-[7px] sm:text-[8px] font-black uppercase tracking-widest px-1 sm:px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-slate-500 shrink-0 bg-slate-50 dark:bg-slate-900">
-                                                    {{ a.type ? a.type.replace('_', ' ') : 'Task' }}
-                                                </span>
-                                                <h4 class="text-[10px] sm:text-sm font-black text-slate-900 dark:text-white truncate transition-colors"
-                                                    :class="activeTab === 'upcoming' ? 'group-hover:text-blue-600' : activeTab === 'completed' ? 'group-hover:text-emerald-600' : 'group-hover:text-red-600'">
-                                                    {{ a.title }}
-                                                </h4>
+                                    <!-- TASKS UNDER THIS DATE -->
+                                    <div class="flex flex-col gap-1.5 sm:gap-2">
+                                        <button v-for="a in group.tasks" :key="a.id" @click="openDetails(a)"
+                                            class="w-full text-left group flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2.5 p-3 sm:p-4 bg-white dark:bg-slate-800 border-l-2 sm:border-l-4 border border-slate-200 dark:border-slate-700 rounded-md sm:rounded-xl hover:shadow-md transition-all duration-200 shadow-sm"
+                                            :class="activeTab === 'upcoming' ? 'border-l-blue-500 hover:border-blue-400' : activeTab === 'completed' ? 'border-l-emerald-500 hover:border-emerald-400' : 'border-l-red-500 hover:border-red-400'">
+                                            
+                                            <div class="hidden sm:flex shrink-0 w-8 h-8 rounded items-center justify-center transition-colors"
+                                                :class="activeTab === 'upcoming' ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white' : activeTab === 'completed' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white' : 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400 group-hover:bg-red-600 group-hover:text-white'">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                                             </div>
-                                            <span class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-slate-100 dark:bg-slate-900/50 px-1.5 py-0.5 rounded shrink-0"
-                                                  :class="activeTab === 'upcoming' ? 'text-blue-600 dark:text-blue-400' : activeTab === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'">
-                                                {{ a.points }} pts
-                                            </span>
-                                        </div>
-                                        <p class="hidden sm:block text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 truncate font-medium leading-snug mt-0.5">
-                                            {{ formatDescription(a.description) }}
-                                        </p>
-                                    </div>
 
-                                    <div class="flex items-center justify-between sm:justify-end gap-2 sm:gap-4 w-full sm:w-auto shrink-0 mt-1 sm:mt-0 pt-2 sm:pt-0 border-t border-dashed border-slate-100 sm:border-none dark:border-slate-700/50">
-                                        <div class="flex items-center gap-1 text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                                            <svg class="w-2.5 h-2.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                            <span :class="activeTab === 'past' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'">
-                                                {{ activeTab === 'completed' ? 'Closed' : 'Due' }}: {{ a.closing_date && activeTab === 'completed' ? formatDate(a.closing_date) : a.due_date ? formatDate(a.due_date) : 'No Date' }}
-                                            </span>
-                                        </div>
-                                        
-                                        <div v-if="isClosed(a) && activeTab !== 'completed'" class="text-[7px] sm:text-[9px] font-black text-red-600 bg-red-50 dark:bg-red-900/20 px-1 py-0.5 rounded uppercase tracking-widest border border-red-100 dark:border-red-800/50">Locked</div>
-                                        <div v-else-if="activeTab === 'completed'" class="text-[7px] sm:text-[9px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1 py-0.5 rounded uppercase tracking-widest border border-emerald-100 dark:border-emerald-800/50">Done</div>
-                                        
-                                        <div v-if="activeTab === 'completed' && a.submissions[0]?.grade" class="hidden sm:flex text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800/50">
-                                            {{ a.submissions[0].grade }} / {{ a.points }}
-                                        </div>
-                                        <svg class="w-3 h-3 text-slate-300 transition-transform group-hover:translate-x-0.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                                        <svg class="w-4 h-4 text-slate-300 transition-transform group-hover:translate-x-0.5 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex items-center justify-between gap-2 sm:hidden mb-1">
+                                                    <div class="flex items-center gap-1.5 min-w-0">
+                                                        <span class="text-[7px] sm:text-[8px] font-black uppercase tracking-widest px-1 sm:px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-slate-500 shrink-0 bg-slate-50 dark:bg-slate-900">
+                                                            {{ a.type ? a.type.replace('_', ' ') : 'Task' }}
+                                                        </span>
+                                                        <h4 class="text-[10px] sm:text-sm font-black text-slate-900 dark:text-white truncate transition-colors"
+                                                            :class="activeTab === 'upcoming' ? 'group-hover:text-blue-600' : activeTab === 'completed' ? 'group-hover:text-emerald-600' : 'group-hover:text-red-600'">
+                                                            {{ a.title }}
+                                                        </h4>
+                                                    </div>
+                                                    <span class="text-[8px] sm:text-[10px] font-black whitespace-nowrap bg-slate-100 dark:bg-slate-900/50 px-1.5 py-0.5 rounded shrink-0"
+                                                        :class="activeTab === 'upcoming' ? 'text-blue-600 dark:text-blue-400' : activeTab === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'">
+                                                        {{ a.points }} pts
+                                                    </span>
+                                                </div>
+
+                                                <div class="hidden sm:flex items-center gap-2 mb-0.5">
+                                                    <span class="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border shrink-0 text-slate-500 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700">
+                                                        {{ a.type ? a.type.replace('_', ' ') : 'Task' }}
+                                                    </span>
+                                                    <h4 class="text-sm font-black text-slate-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                                        {{ a.title }}
+                                                    </h4>
+                                                </div>
+
+                                                <p class="text-[9px] font-bold text-slate-500 dark:text-slate-400 mt-1 truncate">
+                                                    {{ a.course_title }}
+                                                </p>
+                                            </div>
+
+                                            <div class="flex items-center justify-between sm:justify-end gap-2 sm:gap-4 w-full sm:w-auto shrink-0 mt-1.5 sm:mt-0 pt-2 sm:pt-0 border-t border-dashed border-slate-100 sm:border-none dark:border-slate-700/50">
+                                                <div class="flex items-center gap-1 text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                                                    <Clock class="w-2.5 h-2.5 sm:hidden" />
+                                                    <span :class="activeTab === 'past' ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'">
+                                                        {{ a.due_date ? new Date(a.due_date).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : 'No Time Set' }}
+                                                    </span>
+                                                </div>
+                                                
+                                                <div v-if="isClosed(a) && activeTab !== 'completed'" class="text-[7px] sm:text-[9px] font-black text-red-600 bg-red-50 dark:bg-red-900/20 px-1 py-0.5 rounded uppercase tracking-widest border border-red-100 dark:border-red-800/50">Locked</div>
+                                                <div v-else-if="activeTab === 'completed'" class="text-[7px] sm:text-[9px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1 py-0.5 rounded uppercase tracking-widest border border-emerald-100 dark:border-emerald-800/50">Done</div>
+                                                
+                                                <div v-if="activeTab === 'completed' && a.submissions[0]?.grade" class="hidden sm:flex text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded border border-emerald-200 dark:border-emerald-800/50">
+                                                    {{ a.submissions[0].grade }} / {{ a.points }}
+                                                </div>
+                                            </div>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                             
                             <div v-else class="flex flex-col items-center justify-center h-full py-12 px-4 text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 mt-2 sm:mt-0 shadow-sm">
-                                <CheckCircle2 class="w-5 h-5 text-slate-300 dark:text-slate-600 mb-2" v-if="activeTab !== 'needs_grading'" />
+                                <CheckCircle2 class="w-5 h-5 text-slate-300 dark:text-slate-600 mb-2" v-if="activeTab !== 'upcoming'" />
                                 <div class="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-full flex items-center justify-center mb-2 border border-emerald-100 dark:border-emerald-900/30" v-else>
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                                 </div>
@@ -450,7 +537,7 @@ const formatDate = (dateString) => {
                     
                     <div v-else class="flex flex-col items-center justify-center h-full p-6 text-slate-500 pt-1 bg-white md:bg-transparent rounded-lg m-2 md:m-0 border md:border-none border-slate-200">
                         <FileText class="w-8 h-8 mb-2 text-slate-300 dark:text-slate-600" />
-                        <p class="text-[9px] font-black uppercase tracking-widest text-center max-w-[200px] leading-relaxed">Select a class to view assignments.</p>
+                        <p class="text-[9px] font-black uppercase tracking-widest text-center max-w-[200px] leading-relaxed">Select a class from the menu.</p>
                     </div>
                 </main>
             </div>
@@ -586,7 +673,7 @@ const formatDate = (dateString) => {
                         </div>
 
                         <!-- Graded Status -->
-                        <div v-if="selectedAssignment.submissions[0].grade" class="p-5 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
+                        <div v-if="selectedAssignment.submissions[0].grade !== null" class="p-5 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
                             <div class="flex items-center gap-2 mb-2 text-emerald-700 font-black uppercase text-xs tracking-widest">
                                 <Trophy class="w-4 h-4" /> 
                                 Graded: {{ selectedAssignment.submissions[0].grade }}/{{ selectedAssignment.points }}
@@ -674,4 +761,12 @@ const formatDate = (dateString) => {
 .announcement-content :deep(a) { color: #2563eb; text-decoration: underline; font-weight: 700; }
 .announcement-content :deep(ul) { list-style-type: disc; padding-left: 1.5rem; margin: 0.5rem 0; }
 .announcement-content :deep(ol) { list-style-type: decimal; padding-left: 1.5rem; margin: 0.5rem 0; }
+
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
 </style>

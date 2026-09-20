@@ -59,6 +59,40 @@ const getSubmission = (student, assignmentId) => {
     return student.submissions.find(s => s.assignment_id === assignmentId);
 };
 
+// ==========================================
+// NEW: Direct File Link Extraction
+// ==========================================
+const getFileUrl = (path) => {
+    if (!path || typeof path !== 'string') return '';
+    const cleanPath = path.replace(/^\/storage\//, '');
+    return `${page.props.env.AWS_URL}/${cleanPath}`;
+};
+
+const getSubmissionLink = (submission, assignmentId) => {
+    if (!submission) return route('teacher.assignments.show', assignmentId);
+    
+    // If the student uploaded files, extract the first one and link directly to it
+    if (submission.file_paths) {
+        let parsed = submission.file_paths;
+        if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch(e) { parsed = [parsed]; }
+        }
+        if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch(e) { parsed = [parsed]; }
+        }
+        if (Array.isArray(parsed)) {
+            const flat = parsed.flat(Infinity).filter(p => typeof p === 'string' && p.trim() !== '');
+            if (flat.length > 0) {
+                return getFileUrl(flat[0]);
+            }
+        }
+    }
+    
+    // Fallback: If they only submitted text (or it's a Gradebook auto-save), go to the manage page
+    return route('teacher.assignments.show', assignmentId);
+};
+// ==========================================
+
 const isLateEnrollee = (student, assignment) => {
     const desc = assignment.description || '';
     const isHiddenFromLate = desc.includes('[RESTRICT_LATE_STUDENTS]');
@@ -520,17 +554,17 @@ const downloadExcel = async () => {
                                     <td v-for="a in c.assignments" :key="a.id" class="px-1 py-1 border-r border-slate-100 dark:border-slate-800 relative" :class="!isEditMode ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''">
                                         <template v-if="getSubmission(student, a.id)">
                                             <div class="flex items-center justify-center gap-1">
-                                                <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission"
+                                                <a :href="getSubmissionLink(getSubmission(student, a.id), a.id)" target="_blank" title="View Submission"
                                                     class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition ml-0.5">
                                                     <FileText class="w-3 h-3 shrink-0" />
                                                 </a>
                                                 <div class="flex-1 px-0.5">
                                                     <template v-if="isEditMode">
                                                         <input 
-                                                            type="number" 
-                                                            step="0.01" 
-                                                            min="0" 
-                                                            :max="a.points"
+                                                             type="number" 
+                                                             step="0.01" 
+                                                             min="0" 
+                                                             :max="a.points"
                                                             :value="getInputValue(student, a.id)"
                                                             @input="updatePendingGrade(student.id, a.id, a.points, c.id, $event)"
                                                             class="w-full text-center border-0 bg-transparent focus:ring-1 focus:ring-inset rounded text-[10px] font-bold transition-colors py-0.5 px-0 h-5"
@@ -615,8 +649,8 @@ const downloadExcel = async () => {
                                       
                                      <div class="flex items-center gap-1 w-auto shrink-0">
                                          <template v-if="getSubmission(student, a.id)">
-                                             <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission"
-                                                 class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition bg-slate-50 dark:bg-slate-900 p-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
+                                             <a :href="getSubmissionLink(getSubmission(student, a.id), a.id)" target="_blank" title="View Submission"
+                                                 class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition bg-white dark:bg-slate-800 p-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
                                                  <FileText class="w-3 h-3" />
                                              </a>
                                               
@@ -729,7 +763,7 @@ const downloadExcel = async () => {
                                 <td v-for="a in assignments" :key="a.id" class="px-1 py-1 border-r border-slate-100 dark:border-slate-800 relative" :class="!isEditMode ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''">
                                     <template v-if="getSubmission(student, a.id)">
                                         <div class="flex items-center justify-center gap-1">
-                                            <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission"
+                                            <a :href="getSubmissionLink(getSubmission(student, a.id), a.id)" target="_blank" title="View Submission"
                                                 class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition ml-0.5">
                                                 <FileText class="w-3 h-3 shrink-0" />
                                             </a>
@@ -842,7 +876,7 @@ const downloadExcel = async () => {
                                  
                                 <div class="flex items-center gap-1 w-auto shrink-0">
                                     <template v-if="getSubmission(student, a.id)">
-                                        <a :href="route('teacher.assignments.show', a.id)" target="_blank" title="View Submission"
+                                        <a :href="getSubmissionLink(getSubmission(student, a.id), a.id)" target="_blank" title="View Submission"
                                             class="text-slate-400 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400 transition bg-white dark:bg-slate-800 p-0.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
                                             <FileText class="w-3 h-3" />
                                         </a>
@@ -879,15 +913,18 @@ const downloadExcel = async () => {
                             <div class="col-span-1 sm:col-span-2 grid grid-cols-3 gap-1.5 mt-1 pt-1 border-t border-slate-100 dark:border-slate-700">
                                 <div class="text-center bg-blue-50/50 dark:bg-blue-900/10 p-1.5 rounded border border-blue-100 dark:border-blue-800/30">
                                     <span class="block text-[7px] font-black uppercase text-blue-500">Ass. PS</span>
-                                    <span class="block text-[10px] font-black text-blue-600 dark:text-blue-400">{{ student.assignPS }}%</span>
+                                    <span class="block text-[10px] font-black text-blue-600 dark:text-blue-400 mt-0.5">{{ student.assignment_score > 0 ? ((student.assignment_score / c.max_assignment) * 100).toFixed(1) : 0 }}%</span>
+                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.assignment_score }}/{{ c.max_assignment }}</span>
                                 </div>
                                 <div class="text-center bg-purple-50/50 dark:bg-purple-900/10 p-1.5 rounded border border-purple-100 dark:border-purple-800/30">
                                     <span class="block text-[7px] font-black uppercase text-purple-500">Act. PS</span>
-                                    <span class="block text-[10px] font-black text-purple-600 dark:text-purple-400">{{ student.actPS }}%</span>
+                                    <span class="block text-[10px] font-black text-purple-600 dark:text-purple-400 mt-0.5">{{ student.actPS }}%</span>
+                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.activity_score }}/{{ c.max_activity }}</span>
                                 </div>
                                 <div class="text-center bg-orange-50/50 dark:bg-orange-900/10 p-1.5 rounded border border-orange-100 dark:border-orange-800/30">
                                     <span class="block text-[7px] font-black uppercase text-orange-500">PT. PS</span>
-                                    <span class="block text-[10px] font-black text-orange-600 dark:text-orange-400">{{ student.ptPS }}%</span>
+                                    <span class="block text-[10px] font-black text-orange-600 dark:text-orange-400 mt-0.5">{{ student.pt_score > 0 ? ((student.pt_score / c.max_pt) * 100).toFixed(1) : 0 }}%</span>
+                                    <span class="block text-[7px] font-bold text-slate-500 mt-0.5">{{ student.pt_score }}/{{ c.max_pt }}</span>
                                 </div>
                             </div>
                             

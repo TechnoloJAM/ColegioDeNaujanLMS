@@ -45,10 +45,8 @@ class AdminDashboardController extends Controller
             })->count();
             
         $suspendedUsers = User::where('status', 'suspended')->count();
-
         $submissionsProcessed = Submission::where('created_at', '>=', $startOfMonth)->count();
         $aiInterventions = Recommendation::where('created_at', '>=', $startOfMonth)->count();
-
         $totalPublishedCourses = Course::where('is_published', true)->count();
         
         $healthyCourses = Course::where('is_published', true)
@@ -166,6 +164,7 @@ class AdminDashboardController extends Controller
         // ==========================================
         $month = $request->query('month', now()->month);
         $year = $request->query('year', now()->year);
+
         $date = Carbon::createFromDate($year, $month, 1);
         $daysInMonth = $date->daysInMonth;
 
@@ -196,7 +195,7 @@ class AdminDashboardController extends Controller
                                        ->whereNotNull('email_verified_at')
                                        ->filter(fn($u) => $u->role === 'admin' || $u->school_id !== null)
                                        ->count();
-                                        
+                                         
             $suspendedData[] = $dailyUsers->where('status', 'suspended')->count();
             $enrollmentsData[] = $enrollsDaily->get($i, 0);
         }
@@ -241,7 +240,7 @@ class AdminDashboardController extends Controller
                     User::where('role', 'student')->count(),
                     User::where('role', 'teacher')->count(),
                     User::where('role', 'admin')->count(),
-                    User::where('role', 'dean')->count() // Updated to include Dean
+                    User::where('role', 'dean')->count() 
                 ]
             ],
             'chartData' => [
@@ -259,7 +258,7 @@ class AdminDashboardController extends Controller
             'currentYear' => (int) $year,
             'monthName' => $date->format('F Y'),
             'actionItems' => $actionItems->values()->toArray(),
-            'activityLogs' => $activityLogs // Passing to Vue
+            'activityLogs' => $activityLogs 
         ]);
     }
 
@@ -280,19 +279,24 @@ class AdminDashboardController extends Controller
 
     public function storeUser(Request $request)
     {
+        // Automatically inject @lms.com to whatever the admin typed
+        $username = explode('@', $request->email)[0];
+        $request->merge([
+            'email' => $username . '@lms.com'
+        ]);
+
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users,email',
             'role' => 'required|in:admin,dean,teacher,student',
             'school_id' => 'required|string|max:50',
             'contact_number' => 'required|string|max:20',
-            'department_id' => 'required_if:role,teacher,dean|nullable|exists:departments,id',
+            'department_id' => 'nullable|exists:departments,id', // REMOVED the required_if rule
             'program' => 'required_if:role,student|nullable|string|max:100',
             'password' => ['required', Rules\Password::defaults()],
         ], [
             'school_id.required' => 'The ID / Employee number is required.',
             'contact_number.required' => 'The mobile contact number is required.',
-            'department_id.required_if' => 'Please assign a department for this account.',
             'program.required_if' => 'Please select a degree program for the student.',
         ]);
 
@@ -310,6 +314,7 @@ class AdminDashboardController extends Controller
 
         return back()->with('success', ucfirst($request->role) . ' account created and automatically verified.');
     }
+
     public function bulkToggleUserStatus(Request $request)
     {
         $request->validate([
@@ -595,7 +600,6 @@ class AdminDashboardController extends Controller
                 }
             }
         }
-
         return null; 
     }
 

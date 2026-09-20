@@ -132,13 +132,16 @@ const toggleSelection = (id) => {
     else selectedIds.value.push(id);
 };
 
+// ==========================================
+// UPDATED: AUTO-GENERATE USERNAME ONLY
+// ==========================================
 const generateAdminEmail = () => {
     const randomNums = Math.floor(100 + Math.random() * 900);
     if (form.name) {
         const formattedName = form.name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-        form.email = `${formattedName}${randomNums}@lms.com`;
+        form.email = `${formattedName}${randomNums}`;
     } else {
-        form.email = `user${randomNums}@lms.com`;
+        form.email = `user${randomNums}`;
     }
 };
 
@@ -760,6 +763,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
             </div>
         </Modal>
 
+        <!-- CREATE NEW ACCOUNT MODAL -->
         <Modal :show="isCreateModalOpen" :closeable="false" @close="isCreateModalOpen = false" maxWidth="md">
             <div class="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
                 <h2 class="text-sm sm:text-base font-bold text-slate-900 dark:text-white mb-3 shrink-0 flex items-center gap-2">
@@ -778,15 +782,20 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                             <InputError :message="form.errors.name" class="mt-1 text-[9px]" />
                         </div>
 
-                        <!-- Email Address -->
+                        <!-- Username (Email) -->
                         <div>
                             <div class="flex justify-between items-end mb-0.5">
-                                <InputLabel value="Email Address *" class="text-[8px] font-bold uppercase text-slate-500" />
+                                <InputLabel value="Username *" class="text-[8px] font-bold uppercase text-slate-500" />
                                 <button type="button" @click="generateAdminEmail" class="text-[8px] text-blue-600 dark:text-blue-400 font-black uppercase tracking-widest hover:underline">
-                                    Auto @LMS.COM
+                                    Auto-Generate
                                 </button>
                             </div>
-                            <input v-model="form.email" type="email" :class="inputClass" placeholder="e.g. user@lms.com" required />
+                            <div class="flex rounded-md shadow-sm">
+                                <input v-model="form.email" type="text" class="flex-1 rounded-l-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent py-1.5 px-3 text-xs transition-colors duration-200" placeholder="e.g. juan123" required />
+                                <span class="inline-flex items-center px-3 rounded-r-md border border-l-0 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-bold">
+                                    @lms.com
+                                </span>
+                            </div>
                             <InputError :message="form.errors.email" class="mt-1 text-[9px]" />
                         </div>
 
@@ -802,11 +811,11 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 </select>
                             </div>
                             
-                            <!-- Department dropdown for Teacher / Dean -->
+                            <!-- Department dropdown for Teacher / Dean (Now Optional) -->
                             <div v-if="form.role === 'teacher' || form.role === 'dean'">
-                                <InputLabel value="Assign Department *" class="text-[8px] font-bold uppercase text-purple-500 mb-0.5" />
-                                <select v-model="form.department_id" :class="inputClass" class="cursor-pointer border-purple-200 dark:border-purple-800 focus:ring-purple-500 dark:[color-scheme:dark]" required>
-                                    <option value="" disabled class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Select Dept...</option>
+                                <InputLabel value="Assign Department (Optional)" class="text-[8px] font-bold uppercase text-purple-500 mb-0.5" />
+                                <select v-model="form.department_id" :class="inputClass" class="cursor-pointer border-purple-200 dark:border-purple-800 focus:ring-purple-500 dark:[color-scheme:dark]">
+                                    <option value="" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">No Department</option>
                                     <option v-for="dept in departments" :key="dept.id" :value="dept.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ dept.name }}</option>
                                 </select>
                                 <InputError :message="form.errors.department_id" class="mt-1 text-[9px]" />
@@ -1070,9 +1079,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                         </div>
                         
                         <div v-if="roleForm.role === 'teacher' || roleForm.role === 'dean'" class="col-span-2">
-                            <InputLabel value="Assign Department *" class="text-[9px] font-bold uppercase text-purple-500 mb-1" />
-                            <select v-model="roleForm.department_id" :class="inputClass" class="cursor-pointer border-purple-200 dark:border-slate-700 focus:ring-purple-500 dark:[color-scheme:dark]" required>
-                                <option value="" disabled class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Select Dept...</option>
+                            <InputLabel value="Assign Department (Optional)" class="text-[9px] font-bold uppercase text-purple-500 mb-1" />
+                            <select v-model="roleForm.department_id" :class="inputClass" class="cursor-pointer border-purple-200 dark:border-slate-700 focus:ring-purple-500 dark:[color-scheme:dark]">
+                                <option value="" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">No Department</option>
                                 <option v-for="dept in departments" :key="dept.id" :value="dept.id" class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ dept.name }}</option>
                             </select>
                             <InputError :message="roleForm.errors.department_id" class="mt-1 text-[9px]" />

@@ -310,9 +310,6 @@ const barChartOptions = {
                             <Zap class="w-3 h-3" /> <span class="hidden sm:inline">Quick Action</span> <ChevronDown class="w-3 h-3 ml-0.5" />
                         </button>
                         <div class="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[990] overflow-hidden flex flex-col py-1">
-                            <button @click="isCreateModalOpen = true" class="w-full text-left flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
-                                <UserPlus class="w-3.5 h-3.5 text-blue-500" /> Create Account
-                            </button>
                             <button @click="isBroadcastModalOpen = true" class="w-full text-left flex items-center gap-2 px-3 py-2 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
                                 <Megaphone class="w-3.5 h-3.5 text-amber-500" /> Broadcast Event
                             </button>

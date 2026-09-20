@@ -17,14 +17,14 @@ class GoogleAuthController extends Controller
     {
         /** @var \Laravel\Socialite\Two\GoogleProvider $driver */
         $driver = Socialite::driver('google');
-
         return $driver->with(['prompt' => 'select_account'])->redirect();
     }
 
     public function callback()
     {
         try {
-            $googleUser = Socialite::driver('google')->user();
+            // FIXED 1: Added stateless() to prevent the "have to click twice" session bug
+            $googleUser = Socialite::driver('google')->stateless()->user();
             
             $user = User::where('email', $googleUser->getEmail())->first();
 
@@ -39,22 +39,11 @@ class GoogleAuthController extends Controller
                     'email_verified_at' => null, 
                 ]);
                 
-                $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-                
-                \App\Models\OtpToken::create([
-                    'email' => $user->email,
-                    'token' => $code,
-                    'purpose' => 'registration',
-                ]);
-                
-                \Illuminate\Support\Facades\Mail::to($user->email)->send(new \App\Mail\OtpMail($code));
-                
+                // FIXED 2: Auto-send OTP logic removed. Now handled by the user clicking "Send Code" on the Verify page.
                 session()->put('otp_email', $user->email);
                 
                 event(new Registered($user));
-
                 return redirect()->route('verification.notice');
-
             } else {
                 $user->update([
                     'google_id' => $googleUser->getId(),
@@ -69,17 +58,7 @@ class GoogleAuthController extends Controller
             }
 
             if (!$user->hasVerifiedEmail()) {
-                \App\Models\OtpToken::where('email', $user->email)->where('purpose', 'registration')->delete();
-                $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-                
-                \App\Models\OtpToken::create([
-                    'email' => $user->email,
-                    'token' => $code,
-                    'purpose' => 'registration',
-                ]);
-                
-                \Illuminate\Support\Facades\Mail::to($user->email)->send(new \App\Mail\OtpMail($code));
-                
+                // FIXED 3: Auto-send OTP logic removed here as well.
                 session()->put('otp_email', $user->email);
                 return redirect()->route('verification.notice');
             }
