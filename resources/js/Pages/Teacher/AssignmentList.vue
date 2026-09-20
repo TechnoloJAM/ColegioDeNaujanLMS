@@ -8,6 +8,12 @@ const props = defineProps({
     courses: Array
 });
 
+const getFileUrl = (path) => {
+    if (!path) return '';
+    const cleanPath = path.replace(/^\/storage\//, '');
+    return `${usePage().props.env.AWS_URL}/${cleanPath}`;
+};
+
 const page = usePage();
 const userId = page.props.auth.user.id;
 const storageKey = `lms_hidden_courses_${userId}`;
@@ -251,8 +257,8 @@ const filteredAssignments = computed(() => {
                             <div class="flex items-center gap-2.5 overflow-hidden w-full">
                                 <div class="relative w-7 h-7 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 overflow-hidden text-[10px] font-black uppercase">
                                     <img v-if="course.thumbnail && !imageErrors[course.id]" 
-                                         :src="course.thumbnail" 
-                                         @error="handleImageError(course.id)"
+                                        :src="getFileUrl(course.thumbnail)" 
+                                        @error="handleImageError(course.id)"
                                         class="w-full h-full object-cover" />
                                     <span v-else>{{ course.title.substring(0, 2) }}</span>
                                 </div>
