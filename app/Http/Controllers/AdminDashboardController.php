@@ -561,8 +561,8 @@ class AdminDashboardController extends Controller
                 $oldPath = str_replace('/storage/', '', $course->thumbnail);
                 Storage::disk('public')->delete($oldPath);
             }
-            $path = $request->file('thumbnail')->store('thumbnails', 'public');
-            $data['thumbnail'] = '/storage/' . $path;
+            $path = $request->file('thumbnail')->store('thumbnails', 's3');
+            $data['thumbnail'] = $path;
         }
 
         $course->update($data);
