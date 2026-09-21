@@ -23,9 +23,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        if (config('app.env') === 'production') {
-            URL::forceScheme('https');
-        }
+        // Force HTTPS universally to resolve mixed content and Axios network errors
+        URL::forceScheme('https');
 
         // Customize the default Laravel Verification Email
         VerifyEmail::toMailUsing(function (object $notifiable, string $url) {
@@ -37,6 +36,7 @@ class AppServiceProvider extends ServiceProvider
                 ->action('Verify My Account', $url)
                 ->line('If you did not request this account, you can safely ignore this email.');
         });
+        
         Schema::defaultStringLength(191);
     }
 }
