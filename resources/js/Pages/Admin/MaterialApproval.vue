@@ -534,10 +534,21 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                 </div>
                 
                 <div class="flex-1 p-4 bg-slate-100 dark:bg-slate-950/50 flex flex-col items-center justify-center relative overflow-hidden">
-                    <iframe v-if="selectedMaterialPath?.toLowerCase().endsWith('.pdf')" :src="getFileUrl(selectedMaterialPath)" class="w-full h-full border-none rounded-lg shadow-sm bg-white dark:bg-slate-900"></iframe>
-                    <img v-else-if="selectedMaterialPath?.match(/\.(jpeg|jpg|png|gif)$/i)" :src="getFileUrl(selectedMaterialPath)" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
-                    
-                    <div v-else class="text-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-sm w-full">
+    
+                <!-- 1. PDFs -->
+                <iframe v-if="selectedMaterialPath?.toLowerCase().endsWith('.pdf')" :src="getFileUrl(selectedMaterialPath)" class="w-full h-full border-none rounded-lg shadow-sm bg-white dark:bg-slate-900"></iframe>
+                
+                <!-- 2. Images -->
+                <img v-else-if="selectedMaterialPath?.match(/\.(jpeg|jpg|png|gif|webp)$/i)" :src="getFileUrl(selectedMaterialPath)" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
+
+                <!-- 3. Google Docs Viewer for Office Files -->
+                <iframe v-else-if="selectedMaterialPath?.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)" 
+                        :src="`https://docs.google.com/gview?url=${getFileUrl(selectedMaterialPath)}&embedded=true`" 
+                        class="w-full h-full border-none rounded-lg shadow-sm bg-white">
+                </iframe>
+                
+                <!-- 4. Fallback (Downloads) -->
+                <div v-else class="text-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-sm w-full">
                         <FileText class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" />
                         <p class="text-slate-500 font-black mb-1 text-[11px] uppercase tracking-widest">Preview unavailable</p>
                         <p class="text-slate-400 text-[10px] font-bold mb-6">This file type cannot be viewed directly.</p>
