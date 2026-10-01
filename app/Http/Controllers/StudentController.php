@@ -132,10 +132,12 @@ class StudentController extends Controller
                     continue; 
                 }
 
+                // CRITICAL FIX: Add max points to the total regardless of if they submitted!
+                $total += $a->points;
+
                 $sub = Submission::where('user_id', $user->id)->where('assignment_id', $a->id)->first();
                 if ($sub && $sub->grade !== null) {
                     $earned += $sub->grade; 
-                    $total += $a->points;
                 }
             }
             

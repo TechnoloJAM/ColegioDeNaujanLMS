@@ -433,9 +433,19 @@ const submitGrade = () => {
                                 </a>
                             </div>
 
-                            <iframe v-if="isPdf(currentFilePath)" :src="getFileUrl(currentFilePath)" class="w-full h-full border-none"></iframe>
+                            <!-- 1. Native Browser Render (PDFs) -->
+                            <iframe v-if="isPdf(currentFilePath)" :src="getFileUrl(currentFilePath)" class="w-full h-full border-none bg-white"></iframe>
+
+                            <!-- 2. Native Browser Render (Images) -->
                             <img v-else-if="isImage(currentFilePath)" :src="getFileUrl(currentFilePath)" class="max-w-full max-h-full object-contain p-4" />
-                            
+
+                            <!-- 3. NEW: Google Docs Viewer for Office Files -->
+                            <iframe v-else-if="currentFilePath && currentFilePath.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)" 
+                                    :src="`https://docs.google.com/gview?url=${getFileUrl(currentFilePath)}&embedded=true`" 
+                                    class="w-full h-full border-none bg-white">
+                            </iframe>
+
+                            <!-- 4. Fallback (Zip files or unsupported types) -->
                             <div v-else class="text-center p-8">
                                 <FileText class="w-12 h-12 text-slate-300 dark:text-slate-600 mb-3 mx-auto" />
                                 <p class="text-slate-500 font-black mb-1 text-[10px] uppercase tracking-widest">Preview unavailable</p>

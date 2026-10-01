@@ -303,6 +303,22 @@ class CourseController extends Controller
             'grade' => 'nullable|numeric|min:0'
         ]);
 
+        // 1. SECURE FIX: Verify assignment actually belongs to this exact course
+        $assignment = \App\Models\Assignment::where('id', $request->assignment_id)
+            ->where('course_id', $course->id)
+            ->firstOrFail();
+
+        // 2. SECURE FIX: Verify grade does not exceed the task's maximum points
+        if ($request->grade !== null && $request->grade > $assignment->points) {
+            return response()->json(['error' => 'Grade exceeds maximum points.'], 422);
+        }
+
+        // 3. SECURE FIX: Verify student is officially enrolled in this course
+        $isEnrolled = $course->enrollments()->where('user_id', $request->student_id)->where('status', 'approved')->exists();
+        if (!$isEnrolled) {
+            return response()->json(['error' => 'Student is not enrolled in this course.'], 403);
+        }
+
         Submission::updateOrCreate(
             ['user_id' => $request->student_id, 'assignment_id' => $request->assignment_id],
             ['grade' => $request->grade, 'text_content' => 'Graded directly via Smart Gradebook.']

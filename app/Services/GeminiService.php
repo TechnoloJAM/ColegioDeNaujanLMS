@@ -39,7 +39,7 @@ class GeminiService
 
             foreach ($googleAttempts as $attempt) {
                 try {
-                    $response = Http::timeout(15)->withOptions(['verify' => false])
+                    $response = Http::timeout(15)
                         ->post("{$attempt['url']}?key={$this->apiKey}", [
                             "contents" => [["parts" => [["text" => $finalPrompt]]]]
                         ]);
@@ -85,7 +85,7 @@ class GeminiService
     private function fallbackToGroq($prompt)
     {
         try {
-            $response = Http::timeout(15)->withOptions(['verify' => false])
+            $response = Http::timeout(15)
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $this->groqApiKey,
                     'Content-Type' => 'application/json',
@@ -119,7 +119,7 @@ class GeminiService
 
         foreach ($freeModels as $model) {
             try {
-                $response = Http::timeout(15)->withOptions(['verify' => false])
+                $response = Http::timeout(15)
                     ->withHeaders([
                         'Authorization' => 'Bearer ' . $this->openRouterApiKey,
                         'Content-Type' => 'application/json',
@@ -177,8 +177,8 @@ class GeminiService
     private function callGeminiForJson($prompt)
     {
         try {
-            $response = Http::timeout(30)->withOptions(['verify' => false])
-                ->withHeaders(['Content-Type' => 'application/json'])
+            $response = Http::timeout(30)
+    ->withHeaders(['Content-Type' => 'application/json'])
                 ->post("{$this->baseUrl}?key={$this->apiKey}", [
                     'contents' => [['parts' => [['text' => $prompt]]]],
                     // Added generationConfig to force native JSON output
@@ -196,5 +196,14 @@ class GeminiService
             Log::error("Gemini JSON Generation Error: " . $e->getMessage());
             return null;
         }
+    }
+
+    public function generateStudyPlan($studentName, $courseTitle, $gradesLog, $pending)
+    {
+        if (empty($this->apiKey)) return null;
+        
+        $prompt = "Act as an academic advisor for {$studentName}. Course: '{$courseTitle}'. Past Grades: [{$gradesLog}]. Pending Tasks: [{$pending}]. Task: Give a short recommendation and reasoning to improve or maintain their grade. Return ONLY JSON: {\"recommendation\": \"Advice here\", \"reasoning\": \"Reason here\"}";
+        
+        return $this->callGeminiForJson($prompt);
     }
 }

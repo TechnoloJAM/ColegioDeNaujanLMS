@@ -557,9 +557,19 @@ const formatDate = (dateString) => {
                 </div>
                 
                 <div class="flex-1 p-4 bg-slate-100 dark:bg-slate-950/50 flex flex-col items-center justify-center relative overflow-hidden">
-                    <iframe v-if="selectedMaterialPath?.toLowerCase().endsWith('.pdf')" :src="getFileUrl(selectedMaterialPath)" class="w-full h-full border-none rounded-lg shadow-sm bg-white dark:bg-slate-900"></iframe>
-                    <img v-else-if="selectedMaterialPath?.match(/\.(jpeg|jpg|png|gif)$/i)" :src="getFileUrl(selectedMaterialPath)" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
-                    
+                    <!-- 1. Native Browser Render (PDFs) -->
+                    <iframe v-if="isPdf(selectedMaterialPath)" :src="getFileUrl(selectedMaterialPath)" class="w-full h-full border-none rounded-lg shadow-sm bg-white dark:bg-slate-900"></iframe>
+
+                    <!-- 2. Native Browser Render (Images) -->
+                    <img v-else-if="isImage(selectedMaterialPath)" :src="getFileUrl(selectedMaterialPath)" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
+
+                    <!-- 3. NEW: Google Docs Viewer for Office Files -->
+                    <iframe v-else-if="selectedMaterialPath && selectedMaterialPath.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)" 
+                            :src="`https://docs.google.com/gview?url=${getFileUrl(selectedMaterialPath)}&embedded=true`" 
+                            class="w-full h-full border-none rounded-lg shadow-sm bg-white">
+                    </iframe>
+
+                    <!-- 4. Fallback (Zip files or unsupported types) -->
                     <div v-else class="text-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-sm w-full">
                         <FileText class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4 mx-auto" />
                         <p class="text-slate-500 font-black mb-1 text-[11px] uppercase tracking-widest">Preview unavailable</p>
