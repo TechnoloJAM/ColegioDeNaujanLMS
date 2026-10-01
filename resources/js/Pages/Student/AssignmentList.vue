@@ -17,6 +17,9 @@ const visibleCourses = computed(() => {
     return props.courses.filter(c => !hiddenCourses.value.includes(c.id));
 });
 
+const isPdf = (path) => typeof path === 'string' && path.toLowerCase().endsWith('.pdf');
+const isImage = (path) => typeof path === 'string' && Boolean(path.match(/\.(jpeg|jpg|png|gif|webp)$/i));
+
 const getFileUrl = (path) => {
     if (!path) return '';
     const cleanPath = path.replace(/^\/storage\//, '');

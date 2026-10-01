@@ -158,6 +158,14 @@ const submitGrade = () => {
         onSuccess: () => { showGradeModal.value = false; gradeForm.reset(); }
     });
 };
+
+const getSmartPreviewLink = (path) => {
+    const url = getFileUrl(path);
+    if (typeof path === 'string' && path.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)) {
+        return `https://docs.google.com/gview?url=${url}`;
+    }
+    return url;
+};
 </script>
 
 <template>
@@ -222,7 +230,7 @@ const submitGrade = () => {
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <div v-for="(path, index) in getAssignmentPaths(assignment)" :key="index">
-                                    <a :href="getFileUrl(path)" target="_blank" :download="getFileName(path)" class="flex items-center justify-between p-2.5 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition group">
+                                    <a :href="getSmartPreviewLink(path)" target="_blank" class="flex items-center justify-between p-2.5 rounded-lg border border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition group">
                                         <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 group-hover:text-blue-600 truncate mr-2" :title="getFileName(path)">{{ getFileName(path) }}</span>
                                         <ExternalLink class="w-3 h-3 text-slate-300 group-hover:text-blue-500 shrink-0" />
                                     </a>
