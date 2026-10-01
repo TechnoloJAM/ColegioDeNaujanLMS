@@ -489,7 +489,9 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 <button @click="openMaterialPreview(material.attachment_path)" title="Preview Material" class="p-1.5 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 transition border border-transparent shadow-sm">
                                     <Eye class="w-3.5 h-3.5" />
                                 </button>
-                                    <a :href="getSmartPreviewLink(lesson.attachment_path)" target="_blank" class="p-2 text-emerald-600 bg-emerald-50 hover:text-white hover:bg-emerald-500 ...">
+
+                                <a :href="getSmartPreviewLink(material.attachment_path)" target="_blank" title="Download / Open" class="p-1.5 text-emerald-600 bg-emerald-50 hover:text-white hover:bg-emerald-500 dark:bg-emerald-900/30 dark:text-emerald-500 dark:hover:text-white dark:hover:bg-emerald-600 rounded transition shadow-sm border border-emerald-200 dark:border-emerald-800">
+                                    <Download class="w-3.5 h-3.5" />
                                 </a>
                                 
                                 <button @click="openEditModal(material)" class="text-[9px] font-bold uppercase tracking-wide bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1.5 rounded flex items-center gap-1 hover:bg-slate-200 transition">
