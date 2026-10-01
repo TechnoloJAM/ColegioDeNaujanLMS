@@ -940,7 +940,7 @@ const downloadExcel = async () => {
                 </div>
             </div>
 
-            <!-- FALLBACK IF NO DATA IS AVAILABLE -->
+            <!-- FALLBACK IF NO DATA IS AVAILABLE (Existing) -->
             <div v-else-if="course && (!course.id || course.id !== 'all')" class="mt-6 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-8 text-center flex flex-col items-center justify-center">
                 <h3 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">No Data Available</h3>
                 <p class="text-[10px] text-slate-500 mt-1 uppercase font-bold tracking-widest">
@@ -949,6 +949,15 @@ const downloadExcel = async () => {
                 </p>
             </div>
             
+            <!-- ADD THIS NEW BLOCK: Catches the 'null' course bug -->
+            <div v-if="!course" class="mt-12 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-12 text-center flex flex-col items-center justify-center">
+                <svg class="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253"></path>
+                </svg>
+                <h3 class="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Gradebook Empty</h3>
+                <p class="text-sm text-slate-500 mt-2 font-bold tracking-widest">You have not created any classes yet.</p>
+            </div>
+
         </div>
     </AuthenticatedLayout>
 </template>

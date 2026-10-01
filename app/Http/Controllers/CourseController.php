@@ -147,7 +147,7 @@ class CourseController extends Controller
         return redirect()->route('teacher.courses.index')->with('success', 'Course deleted successfully.');
     }
 
-    public function gradebook(Request $request, $courseParam = null)
+    public function gradebook(Request $request, $courseParam = 'all')
     {
         $teacherId = Auth::id();
         $user = Auth::user();
