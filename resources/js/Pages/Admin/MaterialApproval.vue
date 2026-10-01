@@ -20,6 +20,14 @@ const getFileUrl = (path) => {
     return `${page.props.env.AWS_URL}/${cleanPath}`;
 };
 
+const getSmartPreviewLink = (path) => {
+    const url = getFileUrl(path);
+    if (typeof path === 'string' && path.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)) {
+        return `https://docs.google.com/gview?url=${url}`;
+    }
+    return url;
+};
+
 const activeTab = ref('pending');
 const selectedIds = ref([]);
 const isProcessingBulk = ref(false); 
@@ -481,8 +489,7 @@ const inputClass = "w-full rounded-md bg-white dark:bg-slate-900 border border-s
                                 <button @click="openMaterialPreview(material.attachment_path)" title="Preview Material" class="p-1.5 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 transition border border-transparent shadow-sm">
                                     <Eye class="w-3.5 h-3.5" />
                                 </button>
-                                <a :href="getFileUrl(material.attachment_path)" download title="Download Material" class="p-1.5 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50 transition border border-transparent shadow-sm">
-                                    <Download class="w-3.5 h-3.5" />
+                                    <a :href="getSmartPreviewLink(lesson.attachment_path)" target="_blank" class="p-2 text-emerald-600 bg-emerald-50 hover:text-white hover:bg-emerald-500 ...">
                                 </a>
                                 
                                 <button @click="openEditModal(material)" class="text-[9px] font-bold uppercase tracking-wide bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1.5 rounded flex items-center gap-1 hover:bg-slate-200 transition">
