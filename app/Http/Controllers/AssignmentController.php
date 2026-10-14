@@ -183,8 +183,10 @@ class AssignmentController extends Controller
 
     public function gradeSubmission(Request $request, Submission $submission)
     {
-        if ($submission->assignment->course->teacher_id !== Auth::id()) abort(403, 'Unauthorized grading attempt.');
-
+        if ($submission->assignment->course->teacher_id !== Auth::id() && Auth::user()->role !== 'admin') {
+            abort(403, 'Unauthorized grading attempt.');
+        }
+        
         $request->validate([
             'grade' => 'required|numeric|min:0|max:' . $submission->assignment->points,
             'feedback' => 'nullable|string'

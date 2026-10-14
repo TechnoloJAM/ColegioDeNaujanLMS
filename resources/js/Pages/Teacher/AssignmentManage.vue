@@ -162,7 +162,7 @@ const submitGrade = () => {
 const getSmartPreviewLink = (path) => {
     const url = getFileUrl(path);
     if (typeof path === 'string' && path.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)) {
-        return `https://docs.google.com/gview?url=${url}`;
+        return `https://docs.google.com/gview?url=${encodeURIComponent(url)}`;
     }
     return url;
 };
@@ -449,7 +449,7 @@ const getSmartPreviewLink = (path) => {
 
                             <!-- 3. NEW: Google Docs Viewer for Office Files -->
                             <iframe v-else-if="currentFilePath && currentFilePath.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)" 
-                                    :src="`https://docs.google.com/gview?url=${getFileUrl(currentFilePath)}&embedded=true`" 
+                                    :src="`https://docs.google.com/gview?url=${encodeURIComponent(getFileUrl(currentFilePath))}&embedded=true`" 
                                     class="w-full h-full border-none bg-white">
                             </iframe>
 

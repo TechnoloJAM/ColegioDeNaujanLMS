@@ -27,6 +27,7 @@ class StudentController extends Controller
         // A student is considered a "late enrollee" if they were officially APPROVED
         // into the class AFTER the assignment's due date. We use updated_at.
         $approvalDate = $enrollment->updated_at ?? $enrollment->created_at ?? $enrollment->enrolled_at ?? now();
+
         return Carbon::parse($approvalDate)->greaterThan(Carbon::parse($assignment->due_date));
     }
 
@@ -119,33 +120,37 @@ class StudentController extends Controller
         }
         // ==========================================
         
-        foreach ($enrolledCourseIds as $courseId) {
-            $course = Course::find($courseId);
-            if (!$course) continue;
+        // Eager-load courses with assignments and all student submissions in 2 queries total
+        $enrolledCourses = Course::whereIn('id', $enrolledCourseIds)->with('assignments')->get();
+        $userSubmissions = Submission::where('user_id', $user->id)->get()->keyBy('assignment_id');
 
-            $assignments = Assignment::where('course_id', $courseId)->get();
-            $total = 0; $earned = 0;
+        foreach ($enrolledCourses as $course) {
+            $total = 0; 
+            $earned = 0;
             
-            foreach ($assignments as $a) {
+            foreach ($course->assignments as $a) {
                 // Skip hidden tasks so it doesn't ruin their grade average!
-                if ($this->isHiddenFromStudent($a, $enrollments[$courseId])) {
+                if ($this->isHiddenFromStudent($a, $enrollments[$course->id])) {
                     continue; 
                 }
 
-                // CRITICAL FIX: Add max points to the total regardless of if they submitted!
-                $total += $a->points;
+                $sub = $userSubmissions->get($a->id);
+                $isPastDue = $a->due_date && Carbon::parse($a->due_date)->isPast();
 
-                $sub = Submission::where('user_id', $user->id)->where('assignment_id', $a->id)->first();
-                if ($sub && $sub->grade !== null) {
-                    $earned += $sub->grade; 
+                // Only count toward total if already graded OR past the due date
+                if (($sub && $sub->grade !== null) || $isPastDue) {
+                    $total += $a->points;
+                    if ($sub && $sub->grade !== null) {
+                        $earned += $sub->grade; 
+                    }
                 }
             }
             
             $average = ($total > 0) ? ($earned / $total) * 100 : 100;
 
-            if ($average < 75) {
+            if ($total > 0 && $average < 75) {
                 $hardCodedRecommendations[] = [
-                    'id' => $courseId,
+                    'id' => $course->id,
                     'category' => 'Academic Warning',
                     'recommendation_text' => 'You are currently at risk in ' . $course->title . '. Focus on your upcoming tasks.',
                     'reasoning' => 'Your current grade average is ' . number_format($average, 1) . '%, which is below the passing mark.'
@@ -159,9 +164,9 @@ class StudentController extends Controller
                 $q->where('closing_date', '>=', now())
                   ->orWhereNull('closing_date');
             })
-            ->whereDoesntHave('submissions', function($q) use ($user) {
-                  $q->where('user_id', $user->id);
-               })
+            ->whereDoesntHave('submissions', function($q) use ($user) {  
+                $q->where('user_id', $user->id);  
+            })
             ->with('course:id,title')
             ->orderBy('due_date', 'asc')
             ->get()
@@ -198,7 +203,6 @@ class StudentController extends Controller
     public function courses()
     {
         $user = Auth::user();
-
         $courses = $user->enrolledCourses()
             ->where('courses.is_published', true)
             ->with('teacher')
@@ -218,7 +222,6 @@ class StudentController extends Controller
         }
 
         $user = Auth::user();
-
         if ($user->enrolledCourses()->where('course_id', $course->id)->exists()) {
             return back()->withErrors(['enrollment_code' => 'You are already enrolled (or pending approval) in this class!']);
         }
@@ -248,14 +251,14 @@ class StudentController extends Controller
 
         $course->load([
             'teacher',
-            'lessons' => function($q) use ($now) {
-                  $q->where('approval_status', 'approved')
-                   ->where(function ($query) use ($now) {
-                       $query->whereNull('available_from')->orWhere('available_from', '<=', $now);
-                   })
-                   ->where(function ($query) use ($now) {
-                       $query->whereNull('available_until')->orWhere('available_until', '>=', $now);
-                   });
+            'lessons' => function($q) use ($now) {  
+                $q->where('approval_status', 'approved')
+                  ->where(function ($query) use ($now) {
+                      $query->whereNull('available_from')->orWhere('available_from', '<=', $now);
+                  })
+                  ->where(function ($query) use ($now) {
+                      $query->whereNull('available_until')->orWhere('available_until', '>=', $now);
+                  });
             },
             'assignments.submissions' => function($q) { $q->where('user_id', Auth::id()); },
             'announcements.user',
@@ -330,8 +333,8 @@ class StudentController extends Controller
         }
 
         $existingSubmission = Submission::where('assignment_id', $assignment->id)->where('user_id', Auth::id())->first();
-
         $filePaths = [];
+
         if ($hasFiles) {
             foreach ($request->file('files') as $file) {
                 // FIX: Preserve exact file name by storing inside a unique folder
@@ -367,12 +370,10 @@ class StudentController extends Controller
         }
 
         $submission = Submission::where('assignment_id', $assignment->id)->where('user_id', Auth::id())->first();
-
         if ($submission) {
             if ($submission->grade !== null) return back()->with('error', 'Security Block: Cannot unsubmit a graded assignment.');
             $submission->delete(); 
         }
-
         return back()->with('success', 'Submission removed.');
     }
 

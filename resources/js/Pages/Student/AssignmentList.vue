@@ -566,9 +566,8 @@ const formatDate = (dateString) => {
                     <!-- 2. Native Browser Render (Images) -->
                     <img v-else-if="isImage(selectedMaterialPath)" :src="getFileUrl(selectedMaterialPath)" class="max-w-full max-h-full object-contain rounded-lg shadow-sm" />
 
-                    <!-- 3. NEW: Google Docs Viewer for Office Files -->
-                    <iframe v-else-if="selectedMaterialPath && selectedMaterialPath.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)" 
-                            :src="`https://docs.google.com/gview?url=${getFileUrl(selectedMaterialPath)}&embedded=true`" 
+                    <iframe v-else-if="selectedMaterialPath && !selectedMaterialPath.startsWith('blob:') && selectedMaterialPath.match(/\.(docx|doc|pptx|ppt|xlsx|xls|csv)$/i)" 
+                            :src="`https://docs.google.com/gview?url=${encodeURIComponent(getFileUrl(selectedMaterialPath))}&embedded=true`" 
                             class="w-full h-full border-none rounded-lg shadow-sm bg-white">
                     </iframe>
 

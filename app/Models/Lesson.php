@@ -11,7 +11,7 @@ class Lesson extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = [
+   protected $fillable = [
         'course_id', 
         'title', 
         'semester',
@@ -20,6 +20,7 @@ class Lesson extends Model
         'available_until', 
         'approval_status', 
         'rejection_reason', 
+        'rejection_note',
         'is_archived'
     ];
 

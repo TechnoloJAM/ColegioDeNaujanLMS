@@ -559,7 +559,7 @@ class AdminDashboardController extends Controller
         if ($request->hasFile('thumbnail')) {
             if ($course->thumbnail) {
                 $oldPath = str_replace('/storage/', '', $course->thumbnail);
-                Storage::disk('public')->delete($oldPath);
+                Storage::disk('s3')->delete($oldPath);
             }
             $path = $request->file('thumbnail')->store('thumbnails', 's3');
             $data['thumbnail'] = $path;
