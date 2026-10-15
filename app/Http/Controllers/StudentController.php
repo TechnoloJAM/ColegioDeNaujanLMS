@@ -137,8 +137,8 @@ class StudentController extends Controller
                 $sub = $userSubmissions->get($a->id);
                 $isPastDue = $a->due_date && Carbon::parse($a->due_date)->isPast();
 
-                // Only count toward total if already graded OR past the due date
-                if (($sub && $sub->grade !== null) || $isPastDue) {
+                // Count toward total if graded, OR if unsubmitted and past the due date
+                if (($sub && $sub->grade !== null) || (!$sub && $isPastDue)) {
                     $total += $a->points;
                     if ($sub && $sub->grade !== null) {
                         $earned += $sub->grade; 

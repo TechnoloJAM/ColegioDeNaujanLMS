@@ -42,7 +42,9 @@ const goBack = () => {
 
 const formatDateForInput = (dateString) => {
     if (!dateString) return '';
-    return new Date(dateString).toISOString().slice(0, 16);
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return '';
+    return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
 };
 
 const minDateTime = computed(() => {

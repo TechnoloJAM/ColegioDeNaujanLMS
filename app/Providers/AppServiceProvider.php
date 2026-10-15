@@ -23,7 +23,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Force HTTPS universally to resolve mixed content and Axios network errors
+        config(['app.timezone' => 'Asia/Manila']);
+        date_default_timezone_set('Asia/Manila');
         URL::forceScheme('https');
 
         // Customize the default Laravel Verification Email

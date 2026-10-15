@@ -704,10 +704,10 @@ const formatDate = (dateString) => {
                         </div>
                     </div>
 
-                    <!-- IF NOT SUBMITTED BUT LOCKED -->
+                    <!-- IF NOT SUBMITTED BUT HARD DEADLINE (CLOSING DATE) PASSED -->
                     <div v-else-if="isClosed(selectedAssignment)" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 flex items-center gap-2 text-red-600 dark:text-red-400">
                         <AlertTriangle class="w-5 h-5 shrink-0" />
-                        <span class="text-xs font-black uppercase tracking-widest">Locked. The deadline has passed.</span>
+                        <span class="text-xs font-black uppercase tracking-widest">Locked. The closing date has passed.</span>
                     </div>
 
                     <!-- SUBMISSION FORM -->

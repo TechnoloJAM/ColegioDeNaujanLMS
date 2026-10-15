@@ -199,10 +199,31 @@ onMounted(async () => {
 
 const getStatus = (assignment) => {
     const sub = assignment.submissions && assignment.submissions[0];
-    if (!sub) return assignment.due_date && new Date(assignment.due_date) < new Date() 
-        ? { label: 'Missing', class: 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' } 
-        : { label: 'To Do', class: 'text-slate-500 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700' };
-    if (sub.grade !== null) return { label: `Graded: ${sub.grade}/${assignment.points}`, class: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' };
+    const now = new Date();
+    const isPastDue = assignment.due_date && new Date(assignment.due_date) < now;
+    const closed = isClosed(assignment);
+
+    if (!sub) {
+        if (closed) {
+            return { label: 'Closed / Missing', class: 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' };
+        }
+        if (isPastDue) {
+            return { label: 'Past Due (Open)', class: 'text-amber-600 bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' };
+        }
+        return { label: 'To Do', class: 'text-slate-500 bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700' };
+    }
+
+    if (sub.grade !== null) {
+        return { label: `Graded: ${sub.grade}/${assignment.points}`, class: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' };
+    }
+
+    const submittedAt = new Date(sub.submitted_at || sub.updated_at || sub.created_at);
+    const wasLate = assignment.due_date && submittedAt > new Date(assignment.due_date);
+
+    if (wasLate) {
+        return { label: 'Submitted Late', class: 'text-orange-600 bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800' };
+    }
+
     return { label: 'Submitted', class: 'text-blue-600 bg-blue-50 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800' };
 };
 

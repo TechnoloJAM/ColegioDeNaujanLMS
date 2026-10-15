@@ -270,10 +270,13 @@ const filteredAssignments = computed(() => {
     
     let filtered = props.course.assignments.filter(a => {
         const dueDate = a.due_date ? new Date(a.due_date) : null;
+        const closingDate = a.closing_date ? new Date(a.closing_date) : null;
         const isPastDue = dueDate && dueDate < now;
-        if (assignmentFilter.value === 'upcoming') return !isPastDue;
-        if (assignmentFilter.value === 'past_due') return isPastDue;
-        if (assignmentFilter.value === 'completed') return isPastDue; 
+        const isClosed = closingDate && closingDate < now;
+
+        if (assignmentFilter.value === 'upcoming') return !isPastDue && !isClosed;
+        if (assignmentFilter.value === 'past_due') return isPastDue && !isClosed;
+        if (assignmentFilter.value === 'completed') return isClosed; 
         return true;
     });
 
